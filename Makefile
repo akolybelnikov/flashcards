@@ -1,11 +1,14 @@
-# Go Project Template Makefile
+# Makefile
 
 .PHONY: help build run clean db-start db-stop db-up db-down db-reset
 
-# Default target
+BIN_DIR := .bin
+BINARY := flashcards
+BUILD_OUT := $(BIN_DIR)/$(BINARY)
+
 help:
 	@echo "Available commands:"
-	@echo "  build     - Build the application"
+	@echo "  build     - Build the application into $(BIN_DIR)"
 	@echo "  run       - Run the application"
 	@echo "  clean     - Clean build artifacts"
 	@echo "  db-start  - Start Supabase local development"
@@ -14,17 +17,18 @@ help:
 	@echo "  db-down   - Rollback database migrations"
 	@echo "  db-reset  - Reset database (stop, start, migrate)"
 
-# Application commands
 build:
-	go build -o todo-api cmd/main.go
+	@mkdir -p $(BIN_DIR)
+	go build -o $(BUILD_OUT) cmd/main.go
+	@echo "Built $(BUILD_OUT)"
 
 run:
 	go run cmd/main.go
 
 clean:
-	rm -f todo-api
+	rm -rf $(BIN_DIR)
+	@echo "Removed $(BIN_DIR)"
 
-# Database commands
 db-start:
 	@echo "Starting Supabase local development..."
 	supabase start
@@ -36,3 +40,10 @@ db-stop:
 db-up:
 	@echo "Running database migrations..."
 	supabase migration up
+
+db-down:
+	@echo "Rolling back database migrations..."
+	supabase migration down
+
+db-reset: db-stop db-start db-up
+	@echo "Database reset complete"
