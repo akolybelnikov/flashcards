@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/akolybelnikov/flashcards/services"
 
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -20,21 +22,32 @@ func main() {
 		log.Fatal("DB_URL environment variable is required")
 	}
 
-	todoRepo, err := db.NewPostgresTodoRepository(cfg.DatabaseURL)
+	// Initialize database connection
+	dbConn, err := sql.Open("postgres", cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Failed to open database: %v", err)
 	}
-	defer todoRepo.Close()
+	defer func() {
+		if err := dbConn.Close(); err != nil {
+			log.Printf("Error closing database: %v", err)
+		}
+	}()
 
-	todoService := services.NewTodoService(todoRepo)
-	todoHandler := handlers.NewTodoHandler(todoService)
+	if err := dbConn.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
+
+	// Initialize flashcard components
+	flashcardRepo := db.NewPostgresFlashcardRepository(dbConn)
+	flashcardService := services.NewFlashcardService(flashcardRepo)
+	flashcardHandler := handlers.NewFlashcardHandler(flashcardService)
 
 	router := mux.NewRouter()
 
 	router.Use(corsMiddleware)
 	router.Use(jsonMiddleware)
 
-	todoHandler.RegisterRoutes(router)
+	flashcardHandler.RegisterRoutes(router)
 
 	router.HandleFunc("/health", healthCheckHandler).Methods("GET")
 
@@ -70,5 +83,8 @@ func jsonMiddleware(next http.Handler) http.Handler {
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status": "healthy"}`))
+	_, err := w.Write([]byte(`{"status": "healthy"}`))
+	if err != nil {
+		return
+	}
 }

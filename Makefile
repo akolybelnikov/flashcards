@@ -18,7 +18,7 @@ help:
 	@echo "  db-reset  - Reset database (stop, start, migrate)"
 
 build:
-	@mkdir -p $(BIN_DIR)
+	-@mkdir -p $(BIN_DIR) 2>/dev/null || mkdir $(BIN_DIR) 2>nul || true
 	go build -o $(BUILD_OUT) cmd/main.go
 	@echo "Built $(BUILD_OUT)"
 
@@ -26,7 +26,7 @@ run:
 	go run cmd/main.go
 
 clean:
-	rm -rf $(BIN_DIR)
+	-@rm -rf $(BIN_DIR) 2>/dev/null || rmdir /s /q $(BIN_DIR) 2>nul || true
 	@echo "Removed $(BIN_DIR)"
 
 db-start:
