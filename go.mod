@@ -1,6 +1,6 @@
 module github.com/akolybelnikov/flashcards
 
-go 1.25.3
+go 1.25
 
 require (
 	github.com/gorilla/mux v1.8.1
