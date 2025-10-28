@@ -1,4 +1,4 @@
--- Create a flashcards table
+-- Create a flashcard table
 CREATE TABLE IF NOT EXISTS flashcards (
     id SERIAL PRIMARY KEY,
     question TEXT NOT NULL,
