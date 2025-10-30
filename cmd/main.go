@@ -38,11 +38,14 @@ func main() {
 	}
 
 	// Initialize flashcard components
-	flashcardHandler := handlers.NewFlashcardHandler(services.NewFlashcardService(
-		db.NewPostgresFlashcardRepository(dbConn)))
+	flashcardRepo := db.NewPostgresFlashcardRepository(dbConn)
+	flashcardService := services.NewFlashcardService(flashcardRepo)
+	flashcardHandler := handlers.NewFlashcardHandler(flashcardService)
 
 	router := mux.NewRouter()
 
+	// Add panic recovery middleware first so it can catch panics from other middlewares/handlers
+	router.Use(recoverMiddleware)
 	router.Use(corsMiddleware)
 	router.Use(jsonMiddleware)
 
@@ -56,6 +59,20 @@ func main() {
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+}
+
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic recovered: %v", rec)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"internal_server_error"}`))
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -80,7 +97,7 @@ func jsonMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+func healthCheckHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(`{"status": "healthy"}`))
 	if err != nil {

@@ -30,10 +30,12 @@ type FlashcardService struct {
 }
 
 func NewFlashcardService(repo db.FlashcardRepository) *FlashcardService {
+	// Try to create an OpenAI client; if it fails, log and continue with llm == nil.
 	llm, err := openai.New()
 	if err != nil {
 		log.Printf("AI hint generation disabled: %v", err)
-		return nil
+		// return a service without llm so the app still functions
+		return &FlashcardService{repo: repo, llm: nil}
 	}
 	return &FlashcardService{repo: repo, llm: llm}
 }
@@ -73,8 +75,15 @@ func (s *FlashcardService) GetRandomFlashcard() (*models.Flashcard, error) {
 	return s.repo.GetRandom()
 }
 
-// GenerateAIHint attempts to generate a short hint using OpenAI. It returns nil if generation fails.
+// GenerateAIHint attempts to generate a short hint using OpenAI. It returns nil if the generation fails
+// or if the OpenAI client was not initialized.
 func (s *FlashcardService) GenerateAIHint(flashcard *models.Flashcard, lang string) *string {
+	if s == nil || s.llm == nil {
+		// AI is not configured for this service instance
+		log.Printf("AI hint generation not available: llm not initialized")
+		return nil
+	}
+
 	ctx := context.Background()
 	prompt := "Provide a one-sentence hint or translation for the following flashcard."
 	if lang != "" {
