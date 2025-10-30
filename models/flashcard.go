@@ -19,3 +19,10 @@ type UpdateFlashcardRequest struct {
 	Question *string `json:"question,omitempty"`
 	Answer   *string `json:"answer,omitempty"`
 }
+
+// RandomFlashcardResponse represents the payload returned by the random flashcard endpoint.
+// It contains the flashcard and an optional AI-generated hint or translation.
+type RandomFlashcardResponse struct {
+	Flashcard *Flashcard `json:"flashcard"`
+	AIHint    *string    `json:"ai_hint,omitempty"`
+}

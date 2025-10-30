@@ -38,9 +38,8 @@ func main() {
 	}
 
 	// Initialize flashcard components
-	flashcardRepo := db.NewPostgresFlashcardRepository(dbConn)
-	flashcardService := services.NewFlashcardService(flashcardRepo)
-	flashcardHandler := handlers.NewFlashcardHandler(flashcardService)
+	flashcardHandler := handlers.NewFlashcardHandler(services.NewFlashcardService(
+		db.NewPostgresFlashcardRepository(dbConn)))
 
 	router := mux.NewRouter()
 

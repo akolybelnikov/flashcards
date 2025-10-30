@@ -13,6 +13,7 @@ type FlashcardRepository interface {
 	GetByID(id int) (*models.Flashcard, error)
 	Update(id int, req *models.UpdateFlashcardRequest) (*models.Flashcard, error)
 	Delete(id int) error
+	GetRandom() (*models.Flashcard, error)
 }
 
 type PostgresFlashcardRepository struct {
@@ -129,4 +130,25 @@ func (r *PostgresFlashcardRepository) Delete(id int) error {
 	}
 
 	return nil
+}
+
+func (r *PostgresFlashcardRepository) GetRandom() (*models.Flashcard, error) {
+	query := `SELECT id, question, answer, created_at, updated_at FROM flashcards ORDER BY RANDOM() LIMIT 1`
+
+	var flashcard models.Flashcard
+	err := r.db.QueryRow(query).Scan(
+		&flashcard.ID,
+		&flashcard.Question,
+		&flashcard.Answer,
+		&flashcard.CreatedAt,
+		&flashcard.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("no flashcards found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &flashcard, nil
 }
