@@ -1,0 +1,478 @@
+openapi: 3.0.3
+info:
+  title: Flashcards API
+  description: |
+    AI-engineered flashcard application for language learning with intelligent translation features.
+    
+    This API allows you to create, manage, and study flashcards with optional AI-powered translations
+    between English and Greek. Perfect for language learners who want to build their vocabulary
+    with automated translation assistance.
+    
+    **Key Features:**
+    - Create flashcards manually or with AI translation
+    - Automatically translate between English and Greek
+    - Random flashcard selection for studying
+    - Full CRUD operations on flashcards
+    
+    **GitHub Repository:** [https://github.com/akolybelnikov/flashcards](https://github.com/akolybelnikov/flashcards)
+  version: 1.0.0
+  contact:
+    name: API Support
+    url: https://github.com/akolybelnikov/flashcards/issues
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://flashcards-hqwc.onrender.com
+    description: Production server
+  - url: http://localhost:10000
+    description: Local development server
+
+tags:
+  - name: Flashcards
+    description: Operations for managing flashcards
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check if the API server is running and healthy
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-11-01T10:00:00Z"
+
+  /flashcards:
+    get:
+      summary: Get all flashcards
+      description: Retrieve a list of all flashcards in the system
+      tags:
+        - Flashcards
+      responses:
+        '200':
+          description: List of flashcards retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Flashcard'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new flashcard
+      description: |
+        Create a new flashcard with optional AI translation.
+        
+        **Validation Rules:**
+        - If both `question` and `answer` are provided: Card is created directly (no translation)
+        - If either field is empty: Both `question_lang` and `answer_lang` are **required**
+        - Both fields cannot be empty
+        
+        **Examples:**
+        - Manual card: Provide both question and answer
+        - EN → EL translation: Provide question + both lang fields (answer will be translated)
+        - EL → EN translation: Provide answer + both lang fields (question will be translated)
+      tags:
+        - Flashcards
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFlashcardRequest'
+            examples:
+              manual:
+                summary: Manual card creation (no translation)
+                value:
+                  question: "hello"
+                  answer: "γεια σας"
+              translateToGreek:
+                summary: Translate English to Greek
+                value:
+                  question: "hello"
+                  answer: ""
+                  question_lang: "en"
+                  answer_lang: "el"
+              translateToEnglish:
+                summary: Translate Greek to English
+                value:
+                  question: ""
+                  answer: "γεια σας"
+                  question_lang: "en"
+                  answer_lang: "el"
+      responses:
+        '201':
+          description: Flashcard created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateFlashcardResponse'
+              examples:
+                manual:
+                  summary: Manual creation (no AI)
+                  value:
+                    flashcard:
+                      id: 1
+                      question: "hello"
+                      answer: "γεια σας"
+                      created_at: "2025-11-01T10:00:00Z"
+                      updated_at: "2025-11-01T10:00:00Z"
+                    ai_translation_used: false
+                    translated_field: ""
+                withTranslation:
+                  summary: With AI translation
+                  value:
+                    flashcard:
+                      id: 2
+                      question: "hello"
+                      answer: "γεια σας"
+                      created_at: "2025-11-01T10:00:00Z"
+                      updated_at: "2025-11-01T10:00:00Z"
+                    ai_translation_used: true
+                    translated_field: "answer"
+        '400':
+          description: Bad request (validation error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                bothEmpty:
+                  summary: Both fields empty
+                  value:
+                    error: "Both question and answer cannot be empty"
+                missingLanguages:
+                  summary: Missing language parameters
+                  value:
+                    error: "Both question_lang and answer_lang are required when translation is needed"
+                invalidJson:
+                  summary: Invalid JSON
+                  value:
+                    error: "Invalid JSON payload"
+
+  /flashcards/{id}:
+    get:
+      summary: Get a flashcard by ID
+      description: Retrieve a specific flashcard by its ID
+      tags:
+        - Flashcards
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Flashcard ID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      responses:
+        '200':
+          description: Flashcard retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Flashcard'
+        '400':
+          description: Invalid flashcard ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Flashcard not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "flashcard with id not found"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update a flashcard
+      description: Update the question and/or answer of an existing flashcard
+      tags:
+        - Flashcards
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Flashcard ID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFlashcardRequest'
+            examples:
+              updateBoth:
+                summary: Update both fields
+                value:
+                  question: "goodbye"
+                  answer: "αντίο"
+              updateQuestion:
+                summary: Update only question
+                value:
+                  question: "goodbye"
+              updateAnswer:
+                summary: Update only answer
+                value:
+                  answer: "αντίο"
+      responses:
+        '200':
+          description: Flashcard updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Flashcard'
+        '400':
+          description: Bad request (invalid ID or payload)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Flashcard not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete a flashcard
+      description: Delete a flashcard by its ID
+      tags:
+        - Flashcards
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Flashcard ID
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+      responses:
+        '204':
+          description: Flashcard deleted successfully (no content)
+        '400':
+          description: Invalid flashcard ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Flashcard not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /flashcards/random:
+    get:
+      summary: Get a random flashcard
+      description: |
+        Retrieve a random flashcard for study purposes, optionally with an AI-generated hint.
+        
+        The `lang` query parameter specifies the language for the AI hint. If omitted, the hint
+        may be generated in a default language or not generated at all.
+      tags:
+        - Flashcards
+      parameters:
+        - name: lang
+          in: query
+          required: false
+          description: Language code for the AI hint (e.g., 'el' for Greek, 'en' for English)
+          schema:
+            type: string
+            enum: [en, el]
+            example: el
+      responses:
+        '200':
+          description: Random flashcard retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RandomFlashcardResponse'
+              examples:
+                withHint:
+                  summary: With AI hint
+                  value:
+                    flashcard:
+                      id: 5
+                      question: "hello"
+                      answer: "γεια σας"
+                      created_at: "2025-11-01T10:00:00Z"
+                      updated_at: "2025-11-01T10:00:00Z"
+                    ai_hint: "A common Greek greeting used in formal situations"
+                withoutHint:
+                  summary: Without AI hint
+                  value:
+                    flashcard:
+                      id: 5
+                      question: "hello"
+                      answer: "γεια σας"
+                      created_at: "2025-11-01T10:00:00Z"
+                      updated_at: "2025-11-01T10:00:00Z"
+                    ai_hint: null
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Flashcard:
+      type: object
+      required:
+        - id
+        - question
+        - answer
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the flashcard
+          example: 1
+        question:
+          type: string
+          description: The question/front side of the flashcard
+          example: "hello"
+        answer:
+          type: string
+          description: The answer/back side of the flashcard
+          example: "γεια σας"
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the flashcard was created
+          example: "2025-11-01T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the flashcard was last updated
+          example: "2025-11-01T10:00:00Z"
+
+    CreateFlashcardRequest:
+      type: object
+      properties:
+        question:
+          type: string
+          description: The question/front side of the flashcard (can be empty if using AI translation)
+          example: "hello"
+        answer:
+          type: string
+          description: The answer/back side of the flashcard (can be empty if using AI translation)
+          example: "γεια σας"
+        question_lang:
+          type: string
+          description: Language code for the question (required if either field is empty)
+          enum: [en, el]
+          example: "en"
+        answer_lang:
+          type: string
+          description: Language code for the answer (required if either field is empty)
+          enum: [en, el]
+          example: "el"
+      example:
+        question: "hello"
+        answer: ""
+        question_lang: "en"
+        answer_lang: "el"
+
+    CreateFlashcardResponse:
+      type: object
+      required:
+        - flashcard
+        - ai_translation_used
+      properties:
+        flashcard:
+          $ref: '#/components/schemas/Flashcard'
+        ai_translation_used:
+          type: boolean
+          description: Whether AI translation was used to create this flashcard
+          example: true
+        translated_field:
+          type: string
+          description: Which field was translated ("question" or "answer"), empty if no translation
+          enum: ["", "question", "answer"]
+          example: "answer"
+
+    UpdateFlashcardRequest:
+      type: object
+      properties:
+        question:
+          type: string
+          description: Updated question text (optional)
+          example: "goodbye"
+        answer:
+          type: string
+          description: Updated answer text (optional)
+          example: "αντίο"
+      example:
+        question: "goodbye"
+        answer: "αντίο"
+
+    RandomFlashcardResponse:
+      type: object
+      required:
+        - flashcard
+      properties:
+        flashcard:
+          $ref: '#/components/schemas/Flashcard'
+        ai_hint:
+          type: string
+          nullable: true
+          description: AI-generated hint or context for the flashcard (may be null if AI is unavailable)
+          example: "A common Greek greeting used in formal situations"
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message describing what went wrong
+          example: "Both question and answer cannot be empty"
+

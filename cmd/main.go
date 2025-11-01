@@ -39,7 +39,30 @@ func main() {
 
 	// Initialize flashcard components
 	flashcardRepo := db.NewPostgresFlashcardRepository(dbConn)
-	flashcardService := services.NewFlashcardService(flashcardRepo)
+	if flashcardRepo == nil {
+		log.Fatal("Failed to initialize flashcard repository")
+	}
+
+	// Initialize LLM client if API key is provided
+	var llmClient services.LLMClient
+	if cfg.OpenAIAPIKey != "" {
+		client, err := services.NewOpenAIClient(cfg.OpenAIAPIKey)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize AI translation: %v", err)
+			log.Println("AI translation features will be disabled")
+		} else {
+			llmClient = client
+			log.Println("AI translation enabled")
+		}
+	} else {
+		log.Println("AI translation disabled (OPENAI_API_KEY not set)")
+	}
+
+	flashcardService := services.NewFlashcardService(flashcardRepo, llmClient)
+	if flashcardService == nil {
+		log.Fatal("Failed to initialize flashcard service")
+	}
+
 	flashcardHandler := handlers.NewFlashcardHandler(flashcardService)
 
 	router := mux.NewRouter()

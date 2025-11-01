@@ -39,13 +39,36 @@ func (h *FlashcardHandler) CreateFlashcard(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	flashcard, err := h.service.CreateFlashcard(&req)
+	// Validate: if one field is empty, we need language information for translation
+	questionEmpty := strings.TrimSpace(req.Question) == ""
+	answerEmpty := strings.TrimSpace(req.Answer) == ""
+
+	if questionEmpty && answerEmpty {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Both question and answer cannot be empty")
+		return
+	}
+
+	// If either field is empty (translation needed), we need BOTH language fields
+	if questionEmpty || answerEmpty {
+		if req.QuestionLang == "" || req.AnswerLang == "" {
+			h.writeErrorResponse(w, http.StatusBadRequest, "Both question_lang and answer_lang are required when translation is needed")
+			return
+		}
+	}
+
+	flashcard, aiUsed, translatedField, err := h.service.CreateFlashcard(&req)
 	if err != nil {
 		h.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	h.writeJSONResponse(w, http.StatusCreated, flashcard)
+	response := models.CreateFlashcardResponse{
+		Flashcard:         flashcard,
+		AITranslationUsed: aiUsed,
+		TranslatedField:   translatedField,
+	}
+
+	h.writeJSONResponse(w, http.StatusCreated, response)
 }
 
 func (h *FlashcardHandler) GetAllFlashcards(w http.ResponseWriter, _ *http.Request) {

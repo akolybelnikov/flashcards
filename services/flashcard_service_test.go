@@ -2,7 +2,6 @@ package services
 
 import (
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
@@ -59,23 +58,92 @@ func (m *mockRepo) GetRandom() (*models.Flashcard, error) {
 }
 
 func TestCreateFlashcardValidation(t *testing.T) {
-	svc := NewFlashcardService(&mockRepo{})
+	mockLLM := &MockLLMClient{}
+	svc := NewFlashcardService(&mockRepo{}, mockLLM)
 
-	// Missing question
-	_, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{Question: "", Answer: "ans"})
-	if err == nil {
-		t.Fatalf("expected error when question is empty")
+	// Both fields present - no translation needed
+	fc, aiUsed, field, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question:     "hello",
+		Answer:       "γεια σας",
+		QuestionLang: "en",
+		AnswerLang:   "el",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if aiUsed {
+		t.Fatalf("expected aiUsed to be false when both fields provided")
+	}
+	if field != "" {
+		t.Fatalf("expected empty translatedField when both fields provided")
+	}
+	if fc.Question != "hello" || fc.Answer != "γεια σας" {
+		t.Fatalf("flashcard fields don't match input")
+	}
+}
+
+func TestCreateFlashcardWithTranslation(t *testing.T) {
+	mockLLM := &MockLLMClient{}
+	svc := NewFlashcardService(&mockRepo{}, mockLLM)
+
+	// Only the question provided - should translate to answer
+	fc, aiUsed, field, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question:     "hello",
+		Answer:       "",
+		QuestionLang: "en",
+		AnswerLang:   "el",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !aiUsed {
+		t.Fatalf("expected aiUsed to be true")
+	}
+	if field != "answer" {
+		t.Fatalf("expected translatedField to be 'answer', got '%s'", field)
+	}
+	if fc.Answer == "" {
+		t.Fatalf("expected answer to be translated")
 	}
 
-	// Missing answer
-	_, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{Question: "q", Answer: ""})
+	// Only answer provided - should translate to question
+	fc, aiUsed, field, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question:     "",
+		Answer:       "γεια σας",
+		QuestionLang: "en",
+		AnswerLang:   "el",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !aiUsed {
+		t.Fatalf("expected aiUsed to be true")
+	}
+	if field != "question" {
+		t.Fatalf("expected translatedField to be 'question', got '%s'", field)
+	}
+	if fc.Question == "" {
+		t.Fatalf("expected question to be translated")
+	}
+}
+
+func TestCreateFlashcardWithoutLLMClient(t *testing.T) {
+	svc := NewFlashcardService(&mockRepo{}, nil)
+
+	// Should fail when translation is needed but no LLM client
+	_, _, _, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question:     "hello",
+		Answer:       "",
+		QuestionLang: "en",
+		AnswerLang:   "el",
+	})
 	if err == nil {
-		t.Fatalf("expected error when answer is empty")
+		t.Fatalf("expected error when LLM client is nil and translation needed")
 	}
 }
 
 func TestUpdateFlashcardValidation(t *testing.T) {
-	svc := NewFlashcardService(&mockRepo{})
+	svc := NewFlashcardService(&mockRepo{}, nil)
 
 	// Both fields nil
 	_, err := svc.UpdateFlashcard(1, &models.UpdateFlashcardRequest{})
@@ -85,7 +153,7 @@ func TestUpdateFlashcardValidation(t *testing.T) {
 }
 
 func TestGetRandomFlashcardReturnsFlashcard(t *testing.T) {
-	svc := NewFlashcardService(&mockRepo{})
+	svc := NewFlashcardService(&mockRepo{}, nil)
 
 	fc, err := svc.GetRandomFlashcard()
 	if err != nil {
@@ -99,19 +167,28 @@ func TestGetRandomFlashcardReturnsFlashcard(t *testing.T) {
 	}
 }
 
-func TestGenerateAIHintWithoutAPIKeyReturnsNil(t *testing.T) {
-	// Ensure OPENAI_API_KEY is not set for this test to avoid network calls.
-	old := os.Getenv("OPENAI_API_KEY")
-	_ = os.Unsetenv("OPENAI_API_KEY")
-	defer func() {
-		_ = os.Setenv("OPENAI_API_KEY", old)
-	}()
-
-	svc := NewFlashcardService(&mockRepo{})
-	fc := &models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σασ"}
+func TestGenerateAIHintWithoutLLMClientReturnsNil(t *testing.T) {
+	// Service without LLM client
+	svc := NewFlashcardService(&mockRepo{}, nil)
+	fc := &models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σας"}
 
 	hint := svc.GenerateAIHint(fc, "el")
 	if hint != nil {
-		t.Fatalf("expected nil hint when OPENAI_API_KEY is unset, got '%s'", *hint)
+		t.Fatalf("expected nil hint when LLM client is nil, got '%s'", *hint)
+	}
+}
+
+func TestGenerateAIHintWithLLMClient(t *testing.T) {
+	// Service with mock LLM client
+	mockLLM := &MockLLMClient{}
+	svc := NewFlashcardService(&mockRepo{}, mockLLM)
+	fc := &models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σας"}
+
+	hint := svc.GenerateAIHint(fc, "el")
+	if hint == nil {
+		t.Fatalf("expected hint when LLM client is available")
+	}
+	if *hint == "" {
+		t.Fatalf("expected non-empty hint")
 	}
 }

@@ -25,9 +25,16 @@ build:
 run:
 	go run cmd/main.go
 
+test:
+	go test ./... -v
+
 clean:
 	-@rm -rf $(BIN_DIR) 2>/dev/null || rmdir /s /q $(BIN_DIR) 2>nul || true
 	@echo "Removed $(BIN_DIR)"
+
+clean-test:
+	go clean -testcache
+	@echo "Cleared Go test cache"
 
 db-start:
 	@echo "Starting Supabase local development..."

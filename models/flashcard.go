@@ -11,8 +11,10 @@ type Flashcard struct {
 }
 
 type CreateFlashcardRequest struct {
-	Question string `json:"question"`
-	Answer   string `json:"answer"`
+	Question     string `json:"question"`
+	Answer       string `json:"answer"`
+	QuestionLang string `json:"question_lang"` // e.g., "en" or "el"
+	AnswerLang   string `json:"answer_lang"`   // e.g., "en" or "el"
 }
 
 type UpdateFlashcardRequest struct {
@@ -25,4 +27,11 @@ type UpdateFlashcardRequest struct {
 type RandomFlashcardResponse struct {
 	Flashcard *Flashcard `json:"flashcard"`
 	AIHint    *string    `json:"ai_hint,omitempty"`
+}
+
+// CreateFlashcardResponse represents the payload returned when creating a flashcard
+type CreateFlashcardResponse struct {
+	Flashcard         *Flashcard `json:"flashcard"`
+	AITranslationUsed bool       `json:"ai_translation_used"`
+	TranslatedField   string     `json:"translated_field,omitempty"` // "question" or "answer"
 }

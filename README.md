@@ -1,9 +1,8 @@
-# Go Project (AI app demo)
+# Flashcards API
 
-A comprehensive Go project with 
-REST API functionality, 
-PostgresQL database integration, 
-and Supabase local development setup. 
+AI-engineered flashcard application for language learning with intelligent translation features.
+
+A comprehensive Go REST API with PostgresQL database integration, OpenAI-powered translations, and Supabase local development setup. 
 
 ## Prerequisites
 
@@ -40,10 +39,10 @@ make run
 
 # Or build and run
 make build
-./todo-api
+./.bin/flashcards
 ```
 
-The application will start on `http://localhost:8080` (or the port specified in your `.env` file).
+The application will start on `http://localhost:10000` (or the port specified in your `.env` file).
 
 ## Available Commands
 
@@ -59,10 +58,28 @@ The application will start on `http://localhost:8080` (or the port specified in 
 
 ## API Endpoints
 
-The template includes a complete REST API with the following endpoints:
+Full API documentation is available in the [OpenAPI specification](./openapi.yaml).
+
+The API includes the following endpoints:
+
+### Flashcards
+- `POST /flashcards` - Create a new flashcard (with optional AI translation)
+- `GET /flashcards` - Get all flashcards
+- `GET /flashcards/{id}` - Get a specific flashcard by ID
+- `PUT /flashcards/{id}` - Update a flashcard
+- `DELETE /flashcards/{id}` - Delete a flashcard
+- `GET /flashcards/random` - Get a random flashcard for study (with an optional AI hint)
 
 ### Health Check
 - `GET /health` - Application health status
+
+### API Features
+
+- **AI Translation**: Automatically translate flashcards between English and Greek
+- **Validation**: Smart validation ensures language parameters are provided when needed
+- **Study Mode**: Random flashcard endpoint for practicing
+- **Full CRUD**: Complete create, read, update, delete operations
+
 
 ## Configuration
 
@@ -70,6 +87,7 @@ The application uses environment-based configuration managed through the `config
 
 - **DB_URL**: PostgresQL database connection string (required)
 - **PORT**: Application port (optional, defaults to 8080)
+- **OPENAI_API_KEY**: OpenAI API key for AI translation features (optional)
 
 ## Database
 
