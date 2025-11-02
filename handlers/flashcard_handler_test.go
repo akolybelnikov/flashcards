@@ -1,4 +1,4 @@
-package handlers
+package handlers_test
 
 import (
 	"bytes"
@@ -9,115 +9,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/akolybelnikov/flashcards/handlers"
 	"github.com/akolybelnikov/flashcards/models"
+	"github.com/akolybelnikov/flashcards/services/mocks"
 	"github.com/gorilla/mux"
+	"go.uber.org/mock/gomock"
 )
 
-// mockService implements the FlashcardServiceInterface for handler tests and returns deterministic values.
-// Note: This could be replaced with gomock generated mocks, but inline mocks are simpler for handler tests.
-type mockService struct{}
-
-func (m *mockService) CreateFlashcard(req *models.CreateFlashcardRequest) (*models.Flashcard, error) {
-	now := time.Now()
-
-	// Set defaults for pointers
-	var questionLang, answerLang *string
-	if req.QuestionLang != nil {
-		questionLang = req.QuestionLang
-	}
-	if req.AnswerLang != nil {
-		answerLang = req.AnswerLang
-	}
-
-	aiTranslatedQuestion := false
-	if req.AITranslatedQuestion != nil {
-		aiTranslatedQuestion = *req.AITranslatedQuestion
-	}
-
-	aiTranslatedAnswer := false
-	if req.AITranslatedAnswer != nil {
-		aiTranslatedAnswer = *req.AITranslatedAnswer
-	}
-
-	fc := &models.Flashcard{
-		ID:                   1,
-		Question:             req.Question,
-		Answer:               req.Answer,
-		QuestionLang:         questionLang,
-		AnswerLang:           answerLang,
-		AITranslatedQuestion: aiTranslatedQuestion,
-		AITranslatedAnswer:   aiTranslatedAnswer,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}
-
-	return fc, nil
-}
-
-func (m *mockService) GetAllFlashcards() ([]*models.Flashcard, error) {
-	now := time.Now()
-	return []*models.Flashcard{{ID: 1, Question: "q", Answer: "a", CreatedAt: now, UpdatedAt: now}}, nil
-}
-
-func (m *mockService) GetFlashcardByID(id int) (*models.Flashcard, error) {
-	if id == 1 {
-		now := time.Now()
-		return &models.Flashcard{ID: 1, Question: "q", Answer: "a", CreatedAt: now, UpdatedAt: now}, nil
-	}
-	return nil, errors.New("flashcard with id not found")
-}
-
-func (m *mockService) UpdateFlashcard(id int, req *models.UpdateFlashcardRequest) (*models.Flashcard, error) {
-	if id != 1 {
-		return nil, errors.New("flashcard with id not found")
-	}
-	q := "q"
-	a := "a"
-	if req.Question != nil {
-		q = *req.Question
-	}
-	if req.Answer != nil {
-		a = *req.Answer
-	}
-	now := time.Now()
-	return &models.Flashcard{ID: id, Question: q, Answer: a, CreatedAt: now.Add(-time.Hour), UpdatedAt: now}, nil
-}
-
-func (m *mockService) DeleteFlashcard(id int) error {
-	if id != 1 {
-		return errors.New("flashcard with id not found")
-	}
-	return nil
-}
-
-func (m *mockService) GetRandomFlashcard() (*models.Flashcard, error) {
-	now := time.Now()
-	return &models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σασ", CreatedAt: now, UpdatedAt: now}, nil
-}
-
-func (m *mockService) GenerateAIHint(_ *models.Flashcard, _ string) *string {
-	h := "hint"
-	return &h
-}
-
-func (m *mockService) GenerateTranslation(req *models.GenerateTranslationRequest) (*models.GenerateTranslationResponse, error) {
-	// Simple mock translation
-	translation := "translated: " + req.Content
-	if req.FromLang == "en" && req.ToLang == "el" && req.Content == "hello" {
-		translation = "γεια σας"
-	}
-
-	return &models.GenerateTranslationResponse{
-		Translation: translation,
-		Cached:      false,
-		CacheKey:    "mock-key-123",
-	}, nil
-}
-
 func TestCreateFlashcardHandler(t *testing.T) {
-	// use a mock service that provides deterministic results
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
+
+	// Set up expectation for CreateFlashcard
+	mockSvc.EXPECT().
+		CreateFlashcard(gomock.Any()).
+		DoAndReturn(func(req *models.CreateFlashcardRequest) (*models.Flashcard, error) {
+			now := time.Now()
+			return &models.Flashcard{
+				ID:                   1,
+				Question:             req.Question,
+				Answer:               req.Answer,
+				QuestionLang:         req.QuestionLang,
+				AnswerLang:           req.AnswerLang,
+				AITranslatedQuestion: false,
+				AITranslatedAnswer:   false,
+				CreatedAt:            now,
+				UpdatedAt:            now,
+			}, nil
+		})
 
 	// use gorilla/mux so path variables are parsed correctly
 	r := mux.NewRouter()
@@ -149,8 +71,11 @@ func TestCreateFlashcardHandler(t *testing.T) {
 }
 
 func TestCreateFlashcardBothFieldsEmpty(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
@@ -178,8 +103,16 @@ func TestCreateFlashcardBothFieldsEmpty(t *testing.T) {
 }
 
 func TestGetAllFlashcardsHandler(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
+
+	now := time.Now()
+	mockSvc.EXPECT().
+		GetAllFlashcards().
+		Return([]*models.Flashcard{{ID: 1, Question: "q", Answer: "a", CreatedAt: now, UpdatedAt: now}}, nil)
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
@@ -195,8 +128,15 @@ func TestGetAllFlashcardsHandler(t *testing.T) {
 }
 
 func TestGetFlashcardByIDNotFound(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
+
+	mockSvc.EXPECT().
+		GetFlashcardByID(2).
+		Return(nil, errors.New("flashcard with id not found"))
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
@@ -212,8 +152,11 @@ func TestGetFlashcardByIDNotFound(t *testing.T) {
 }
 
 func TestUpdateFlashcardInvalidID(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
@@ -234,8 +177,15 @@ func TestUpdateFlashcardInvalidID(t *testing.T) {
 }
 
 func TestDeleteFlashcardHandler(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
+
+	mockSvc.EXPECT().
+		DeleteFlashcard(1).
+		Return(nil)
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
@@ -251,8 +201,22 @@ func TestDeleteFlashcardHandler(t *testing.T) {
 }
 
 func TestGetRandomFlashcardHandler(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
+
+	now := time.Now()
+	hint := "hint"
+
+	mockSvc.EXPECT().
+		GetRandomFlashcard().
+		Return(&models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σας", CreatedAt: now, UpdatedAt: now}, nil)
+
+	mockSvc.EXPECT().
+		GenerateAIHint(gomock.Any(), gomock.Any()).
+		Return(&hint)
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
@@ -279,8 +243,29 @@ func TestGetRandomFlashcardHandler(t *testing.T) {
 }
 
 func TestGenerateTranslationHandler(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
+
+	mockSvc.EXPECT().
+		GenerateTranslation(gomock.Any()).
+		DoAndReturn(func(req *models.GenerateTranslationRequest) (*models.GenerateTranslationResponse, error) {
+			translation := "γεια σας"
+			if req.Content == "hello" && req.FromLang == "en" && req.ToLang == "el" {
+				return &models.GenerateTranslationResponse{
+					Translation: translation,
+					Cached:      false,
+					CacheKey:    "mock-key-123",
+				}, nil
+			}
+			return &models.GenerateTranslationResponse{
+				Translation: "translated: " + req.Content,
+				Cached:      false,
+				CacheKey:    "mock-key-123",
+			}, nil
+		})
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
@@ -315,8 +300,11 @@ func TestGenerateTranslationHandler(t *testing.T) {
 }
 
 func TestGenerateTranslationHandlerEmptyContent(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSvc := mocks.NewMockFlashcardServiceInterface(ctrl)
+	h := handlers.NewFlashcardHandler(mockSvc)
 
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
