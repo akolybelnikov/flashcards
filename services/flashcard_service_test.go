@@ -1,149 +1,233 @@
-package services
+package services_test
 
 import (
-	"database/sql"
 	"testing"
-	"time"
 
+	dbmocks "github.com/akolybelnikov/flashcards/db/mocks"
 	"github.com/akolybelnikov/flashcards/models"
+	"github.com/akolybelnikov/flashcards/services"
+	"github.com/akolybelnikov/flashcards/services/mocks"
+	"go.uber.org/mock/gomock"
 )
 
-// mockRepo is a small in-memory implementation of db.FlashcardRepository for tests.
-type mockRepo struct{}
-
-func (m *mockRepo) Create(req *models.CreateFlashcardRequest) (*models.Flashcard, error) {
-	now := time.Now()
-	return &models.Flashcard{ID: 1, Question: req.Question, Answer: req.Answer, CreatedAt: now, UpdatedAt: now}, nil
-}
-
-func (m *mockRepo) GetAll() ([]*models.Flashcard, error) {
-	now := time.Now()
-	return []*models.Flashcard{{ID: 1, Question: "q", Answer: "a", CreatedAt: now, UpdatedAt: now}}, nil
-}
-
-func (m *mockRepo) GetByID(id int) (*models.Flashcard, error) {
-	if id == 1 {
-		now := time.Now()
-		return &models.Flashcard{ID: 1, Question: "q", Answer: "a", CreatedAt: now, UpdatedAt: now}, nil
-	}
-	return nil, sql.ErrNoRows
-}
-
-func (m *mockRepo) Update(id int, req *models.UpdateFlashcardRequest) (*models.Flashcard, error) {
-	if id != 1 {
-		return nil, sql.ErrNoRows
-	}
-	q := "q"
-	a := "a"
-	if req.Question != nil {
-		q = *req.Question
-	}
-	if req.Answer != nil {
-		a = *req.Answer
-	}
-	now := time.Now()
-	return &models.Flashcard{ID: id, Question: q, Answer: a, CreatedAt: now.Add(-time.Hour), UpdatedAt: now}, nil
-}
-
-func (m *mockRepo) Delete(id int) error {
-	if id != 1 {
-		return sql.ErrNoRows
-	}
-	return nil
-}
-
-func (m *mockRepo) GetRandom() (*models.Flashcard, error) {
-	now := time.Now()
-	return &models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σασ", CreatedAt: now, UpdatedAt: now}, nil
-}
-
 func TestCreateFlashcardValidation(t *testing.T) {
-	mockLLM := &MockLLMClient{}
-	svc := NewFlashcardService(&mockRepo{}, mockLLM)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+	mockLLM := mocks.NewMockLLMClient(ctrl)
+	mockCache := mocks.NewMockTranslationCache(ctrl)
+
+	questionLang := "en"
+	answerLang := "el"
+
+	// Set up expectation for Create
+	mockRepo.EXPECT().
+		Create(gomock.Any()).
+		Return(&models.Flashcard{
+			ID:       1,
+			Question: "hello",
+			Answer:   "γεια σας",
+		}, nil)
+
+	svc := services.NewFlashcardService(mockRepo, mockLLM, mockCache)
 
 	// Both fields present - no translation needed
-	fc, aiUsed, field, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
+	fc, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
 		Question:     "hello",
 		Answer:       "γεια σας",
-		QuestionLang: "en",
-		AnswerLang:   "el",
+		QuestionLang: &questionLang,
+		AnswerLang:   &answerLang,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if aiUsed {
-		t.Fatalf("expected aiUsed to be false when both fields provided")
-	}
-	if field != "" {
-		t.Fatalf("expected empty translatedField when both fields provided")
 	}
 	if fc.Question != "hello" || fc.Answer != "γεια σας" {
 		t.Fatalf("flashcard fields don't match input")
 	}
 }
 
-func TestCreateFlashcardWithTranslation(t *testing.T) {
-	mockLLM := &MockLLMClient{}
-	svc := NewFlashcardService(&mockRepo{}, mockLLM)
+func TestCreateFlashcardBothFieldsRequired(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	// Only the question provided - should translate to answer
-	fc, aiUsed, field, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
-		Question:     "hello",
-		Answer:       "",
-		QuestionLang: "en",
-		AnswerLang:   "el",
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+	mockLLM := mocks.NewMockLLMClient(ctrl)
+	mockCache := mocks.NewMockTranslationCache(ctrl)
+
+	svc := services.NewFlashcardService(mockRepo, mockLLM, mockCache)
+
+	// Empty question should fail
+	_, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question: "",
+		Answer:   "γεια σας",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !aiUsed {
-		t.Fatalf("expected aiUsed to be true")
-	}
-	if field != "answer" {
-		t.Fatalf("expected translatedField to be 'answer', got '%s'", field)
-	}
-	if fc.Answer == "" {
-		t.Fatalf("expected answer to be translated")
+	if err == nil {
+		t.Fatalf("expected error when question is empty")
 	}
 
-	// Only answer provided - should translate to question
-	fc, aiUsed, field, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
-		Question:     "",
-		Answer:       "γεια σας",
-		QuestionLang: "en",
-		AnswerLang:   "el",
+	// Empty answer should fail
+	_, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question: "hello",
+		Answer:   "",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("expected error when answer is empty")
 	}
-	if !aiUsed {
-		t.Fatalf("expected aiUsed to be true")
-	}
-	if field != "question" {
-		t.Fatalf("expected translatedField to be 'question', got '%s'", field)
-	}
-	if fc.Question == "" {
-		t.Fatalf("expected question to be translated")
+
+	// Both empty should fail
+	_, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question: "",
+		Answer:   "",
+	})
+	if err == nil {
+		t.Fatalf("expected error when both fields are empty")
 	}
 }
 
-func TestCreateFlashcardWithoutLLMClient(t *testing.T) {
-	svc := NewFlashcardService(&mockRepo{}, nil)
+func TestGenerateTranslation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	// Should fail when translation is needed but no LLM client
-	_, _, _, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
-		Question:     "hello",
-		Answer:       "",
-		QuestionLang: "en",
-		AnswerLang:   "el",
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+	mockLLM := mocks.NewMockLLMClient(ctrl)
+	mockCache := mocks.NewMockTranslationCache(ctrl)
+
+	// Set up cache expectations - first call: cache miss
+	cacheKey := "test-cache-key"
+	mockCache.EXPECT().
+		GenerateKey("hello", "en", "el").
+		Return(cacheKey).
+		Times(2) // Called twice
+
+	mockCache.EXPECT().
+		Get(cacheKey).
+		Return(nil, false) // Cache miss
+
+	// LLM will be called
+	mockLLM.EXPECT().
+		Translate(gomock.Any(), "hello", "en", "el").
+		Return("γεια σας", nil)
+
+	// Cache will store result
+	mockCache.EXPECT().
+		Set(cacheKey, gomock.Any())
+
+	svc := services.NewFlashcardService(mockRepo, mockLLM, mockCache)
+
+	// First call - cache miss
+	resp, err := svc.GenerateTranslation(&models.GenerateTranslationRequest{
+		Content:  "hello",
+		FromLang: "en",
+		ToLang:   "el",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Translation != "γεια σας" {
+		t.Fatalf("expected translation 'γεια σας', got '%s'", resp.Translation)
+	}
+	if resp.Cached {
+		t.Fatalf("expected cached to be false on first call")
+	}
+	if resp.CacheKey == "" {
+		t.Fatalf("expected cache key to be set")
+	}
+
+	// Second call - cache hit
+	mockCache.EXPECT().
+		Get(cacheKey).
+		Return(&services.CachedTranslation{
+			Translation: "γεια σας",
+		}, true) // Cache hit
+
+	resp2, err := svc.GenerateTranslation(&models.GenerateTranslationRequest{
+		Content:  "hello",
+		FromLang: "en",
+		ToLang:   "el",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp2.Translation != "γεια σας" {
+		t.Fatalf("expected same translation from cache")
+	}
+	if !resp2.Cached {
+		t.Fatalf("expected cached to be true on second call")
+	}
+	if resp2.CacheKey != resp.CacheKey {
+		t.Fatalf("expected same cache key")
+	}
+}
+
+func TestGenerateTranslationValidation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+	mockLLM := mocks.NewMockLLMClient(ctrl)
+	mockCache := mocks.NewMockTranslationCache(ctrl)
+
+	svc := services.NewFlashcardService(mockRepo, mockLLM, mockCache)
+
+	// Empty content
+	_, err := svc.GenerateTranslation(&models.GenerateTranslationRequest{
+		Content:  "",
+		FromLang: "en",
+		ToLang:   "el",
 	})
 	if err == nil {
-		t.Fatalf("expected error when LLM client is nil and translation needed")
+		t.Fatalf("expected error when content is empty")
+	}
+
+	// Empty from_lang
+	_, err = svc.GenerateTranslation(&models.GenerateTranslationRequest{
+		Content:  "hello",
+		FromLang: "",
+		ToLang:   "el",
+	})
+	if err == nil {
+		t.Fatalf("expected error when from_lang is empty")
+	}
+
+	// Empty to_lang
+	_, err = svc.GenerateTranslation(&models.GenerateTranslationRequest{
+		Content:  "hello",
+		FromLang: "en",
+		ToLang:   "",
+	})
+	if err == nil {
+		t.Fatalf("expected error when to_lang is empty")
+	}
+}
+
+func TestGenerateTranslationWithoutLLMClient(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+	mockCache := mocks.NewMockTranslationCache(ctrl)
+
+	svc := services.NewFlashcardService(mockRepo, nil, mockCache)
+
+	// Should fail when LLM client is nil
+	_, err := svc.GenerateTranslation(&models.GenerateTranslationRequest{
+		Content:  "hello",
+		FromLang: "en",
+		ToLang:   "el",
+	})
+	if err == nil {
+		t.Fatalf("expected error when LLM client is nil")
 	}
 }
 
 func TestUpdateFlashcardValidation(t *testing.T) {
-	svc := NewFlashcardService(&mockRepo{}, nil)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+
+	svc := services.NewFlashcardService(mockRepo, nil, nil)
 
 	// Both fields nil
 	_, err := svc.UpdateFlashcard(1, &models.UpdateFlashcardRequest{})
@@ -153,7 +237,21 @@ func TestUpdateFlashcardValidation(t *testing.T) {
 }
 
 func TestGetRandomFlashcardReturnsFlashcard(t *testing.T) {
-	svc := NewFlashcardService(&mockRepo{}, nil)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+
+	// Set up expectation for GetRandom
+	mockRepo.EXPECT().
+		GetRandom().
+		Return(&models.Flashcard{
+			ID:       1,
+			Question: "hello",
+			Answer:   "γεια σας",
+		}, nil)
+
+	svc := services.NewFlashcardService(mockRepo, nil, nil)
 
 	fc, err := svc.GetRandomFlashcard()
 	if err != nil {
@@ -168,8 +266,13 @@ func TestGetRandomFlashcardReturnsFlashcard(t *testing.T) {
 }
 
 func TestGenerateAIHintWithoutLLMClientReturnsNil(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+
 	// Service without LLM client
-	svc := NewFlashcardService(&mockRepo{}, nil)
+	svc := services.NewFlashcardService(mockRepo, nil, nil)
 	fc := &models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σας"}
 
 	hint := svc.GenerateAIHint(fc, "el")
@@ -179,9 +282,19 @@ func TestGenerateAIHintWithoutLLMClientReturnsNil(t *testing.T) {
 }
 
 func TestGenerateAIHintWithLLMClient(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
+	mockLLM := mocks.NewMockLLMClient(ctrl)
+
+	// Set up expectation for Translate call
+	mockLLM.EXPECT().
+		Translate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return("A common Greek greeting", nil)
+
 	// Service with mock LLM client
-	mockLLM := &MockLLMClient{}
-	svc := NewFlashcardService(&mockRepo{}, mockLLM)
+	svc := services.NewFlashcardService(mockRepo, mockLLM, nil)
 	fc := &models.Flashcard{ID: 1, Question: "hello", Answer: "γεια σας"}
 
 	hint := svc.GenerateAIHint(fc, "el")

@@ -26,6 +26,7 @@ func NewFlashcardHandler(service services.FlashcardServiceInterface) *FlashcardH
 func (h *FlashcardHandler) RegisterRoutes(router *mux.Router) {
 	router.HandleFunc("/flashcards", h.CreateFlashcard).Methods("POST")
 	router.HandleFunc("/flashcards", h.GetAllFlashcards).Methods("GET")
+	router.HandleFunc("/flashcards/translate", h.GenerateTranslation).Methods("POST")
 	router.HandleFunc("/flashcards/random", h.GetRandomFlashcard).Methods("GET")
 	router.HandleFunc("/flashcards/{id:[0-9]+}", h.GetFlashcardByID).Methods("GET")
 	router.HandleFunc("/flashcards/{id:[0-9]+}", h.UpdateFlashcard).Methods("PUT")
@@ -39,36 +40,19 @@ func (h *FlashcardHandler) CreateFlashcard(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate: if one field is empty, we need language information for translation
-	questionEmpty := strings.TrimSpace(req.Question) == ""
-	answerEmpty := strings.TrimSpace(req.Answer) == ""
-
-	if questionEmpty && answerEmpty {
-		h.writeErrorResponse(w, http.StatusBadRequest, "Both question and answer cannot be empty")
+	// Validate: both question and answer must be provided
+	if strings.TrimSpace(req.Question) == "" || strings.TrimSpace(req.Answer) == "" {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Both question and answer must be provided")
 		return
 	}
 
-	// If either field is empty (translation needed), we need BOTH language fields
-	if questionEmpty || answerEmpty {
-		if req.QuestionLang == "" || req.AnswerLang == "" {
-			h.writeErrorResponse(w, http.StatusBadRequest, "Both question_lang and answer_lang are required when translation is needed")
-			return
-		}
-	}
-
-	flashcard, aiUsed, translatedField, err := h.service.CreateFlashcard(&req)
+	flashcard, err := h.service.CreateFlashcard(&req)
 	if err != nil {
 		h.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	response := models.CreateFlashcardResponse{
-		Flashcard:         flashcard,
-		AITranslationUsed: aiUsed,
-		TranslatedField:   translatedField,
-	}
-
-	h.writeJSONResponse(w, http.StatusCreated, response)
+	h.writeJSONResponse(w, http.StatusCreated, flashcard)
 }
 
 func (h *FlashcardHandler) GetAllFlashcards(w http.ResponseWriter, _ *http.Request) {
@@ -170,6 +154,32 @@ func (h *FlashcardHandler) DeleteFlashcard(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FlashcardHandler) GenerateTranslation(w http.ResponseWriter, r *http.Request) {
+	var req models.GenerateTranslationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	// Validate input
+	if strings.TrimSpace(req.Content) == "" {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Content cannot be empty")
+		return
+	}
+	if strings.TrimSpace(req.FromLang) == "" || strings.TrimSpace(req.ToLang) == "" {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Both from_lang and to_lang must be provided")
+		return
+	}
+
+	response, err := h.service.GenerateTranslation(&req)
+	if err != nil {
+		h.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.writeJSONResponse(w, http.StatusOK, response)
 }
 
 func (h *FlashcardHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data any) {

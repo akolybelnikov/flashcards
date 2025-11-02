@@ -1,5 +1,7 @@
 package db
 
+//go:generate mockgen -destination=mocks/mock_flashcard_repository.go -package=mocks github.com/akolybelnikov/flashcards/db FlashcardRepository
+
 import (
 	"database/sql"
 	"fmt"
@@ -25,13 +27,30 @@ func NewPostgresFlashcardRepository(db *sql.DB) *PostgresFlashcardRepository {
 }
 
 func (r *PostgresFlashcardRepository) Create(req *models.CreateFlashcardRequest) (*models.Flashcard, error) {
-	query := `INSERT INTO flashcards (question, answer) VALUES ($1, $2) RETURNING id, question, answer, created_at, updated_at`
+	query := `
+		INSERT INTO flashcards (question, answer, question_lang, answer_lang, ai_translated_question, ai_translated_answer) 
+		VALUES ($1, $2, $3, $4, $5, $6) 
+		RETURNING id, question, answer, question_lang, answer_lang, ai_translated_question, ai_translated_answer, created_at, updated_at`
+
+	// Set defaults for AI flags if not provided
+	aiTranslatedQuestion := false
+	if req.AITranslatedQuestion != nil {
+		aiTranslatedQuestion = *req.AITranslatedQuestion
+	}
+	aiTranslatedAnswer := false
+	if req.AITranslatedAnswer != nil {
+		aiTranslatedAnswer = *req.AITranslatedAnswer
+	}
 
 	var flashcard models.Flashcard
-	err := r.db.QueryRow(query, req.Question, req.Answer).Scan(
+	err := r.db.QueryRow(query, req.Question, req.Answer, req.QuestionLang, req.AnswerLang, aiTranslatedQuestion, aiTranslatedAnswer).Scan(
 		&flashcard.ID,
 		&flashcard.Question,
 		&flashcard.Answer,
+		&flashcard.QuestionLang,
+		&flashcard.AnswerLang,
+		&flashcard.AITranslatedQuestion,
+		&flashcard.AITranslatedAnswer,
 		&flashcard.CreatedAt,
 		&flashcard.UpdatedAt,
 	)
@@ -43,7 +62,7 @@ func (r *PostgresFlashcardRepository) Create(req *models.CreateFlashcardRequest)
 }
 
 func (r *PostgresFlashcardRepository) GetAll() ([]*models.Flashcard, error) {
-	query := `SELECT id, question, answer, created_at, updated_at FROM flashcards ORDER BY created_at DESC`
+	query := `SELECT id, question, answer, question_lang, answer_lang, ai_translated_question, ai_translated_answer, created_at, updated_at FROM flashcards ORDER BY created_at DESC`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -58,6 +77,10 @@ func (r *PostgresFlashcardRepository) GetAll() ([]*models.Flashcard, error) {
 			&flashcard.ID,
 			&flashcard.Question,
 			&flashcard.Answer,
+			&flashcard.QuestionLang,
+			&flashcard.AnswerLang,
+			&flashcard.AITranslatedQuestion,
+			&flashcard.AITranslatedAnswer,
 			&flashcard.CreatedAt,
 			&flashcard.UpdatedAt,
 		)
@@ -71,13 +94,17 @@ func (r *PostgresFlashcardRepository) GetAll() ([]*models.Flashcard, error) {
 }
 
 func (r *PostgresFlashcardRepository) GetByID(id int) (*models.Flashcard, error) {
-	query := `SELECT id, question, answer, created_at, updated_at FROM flashcards WHERE id = $1`
+	query := `SELECT id, question, answer, question_lang, answer_lang, ai_translated_question, ai_translated_answer, created_at, updated_at FROM flashcards WHERE id = $1`
 
 	var flashcard models.Flashcard
 	err := r.db.QueryRow(query, id).Scan(
 		&flashcard.ID,
 		&flashcard.Question,
 		&flashcard.Answer,
+		&flashcard.QuestionLang,
+		&flashcard.AnswerLang,
+		&flashcard.AITranslatedQuestion,
+		&flashcard.AITranslatedAnswer,
 		&flashcard.CreatedAt,
 		&flashcard.UpdatedAt,
 	)
@@ -92,13 +119,17 @@ func (r *PostgresFlashcardRepository) GetByID(id int) (*models.Flashcard, error)
 }
 
 func (r *PostgresFlashcardRepository) Update(id int, req *models.UpdateFlashcardRequest) (*models.Flashcard, error) {
-	query := `UPDATE flashcards SET question = COALESCE($1, question), answer = COALESCE($2, answer), updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING id, question, answer, created_at, updated_at`
+	query := `UPDATE flashcards SET question = COALESCE($1, question), answer = COALESCE($2, answer), updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING id, question, answer, question_lang, answer_lang, ai_translated_question, ai_translated_answer, created_at, updated_at`
 
 	var flashcard models.Flashcard
 	err := r.db.QueryRow(query, req.Question, req.Answer, id).Scan(
 		&flashcard.ID,
 		&flashcard.Question,
 		&flashcard.Answer,
+		&flashcard.QuestionLang,
+		&flashcard.AnswerLang,
+		&flashcard.AITranslatedQuestion,
+		&flashcard.AITranslatedAnswer,
 		&flashcard.CreatedAt,
 		&flashcard.UpdatedAt,
 	)
@@ -133,13 +164,17 @@ func (r *PostgresFlashcardRepository) Delete(id int) error {
 }
 
 func (r *PostgresFlashcardRepository) GetRandom() (*models.Flashcard, error) {
-	query := `SELECT id, question, answer, created_at, updated_at FROM flashcards ORDER BY RANDOM() LIMIT 1`
+	query := `SELECT id, question, answer, question_lang, answer_lang, ai_translated_question, ai_translated_answer, created_at, updated_at FROM flashcards ORDER BY RANDOM() LIMIT 1`
 
 	var flashcard models.Flashcard
 	err := r.db.QueryRow(query).Scan(
 		&flashcard.ID,
 		&flashcard.Question,
 		&flashcard.Answer,
+		&flashcard.QuestionLang,
+		&flashcard.AnswerLang,
+		&flashcard.AITranslatedQuestion,
+		&flashcard.AITranslatedAnswer,
 		&flashcard.CreatedAt,
 		&flashcard.UpdatedAt,
 	)

@@ -2,7 +2,16 @@
 
 AI-engineered flashcard application for language learning with intelligent translation features.
 
-A comprehensive Go REST API with PostgresQL database integration, OpenAI-powered translations, and Supabase local development setup. 
+A comprehensive Go REST API with PostgreSQL database integration, OpenAI-powered translations with caching, and Supabase local development setup.
+
+## Features
+
+- 🤖 **AI Translation Generation** - Generate translations on-demand with 1-hour caching
+- 📝 **Manual Card Creation** - Full control over flashcard content
+- 🎯 **Translation Tracking** - Know which fields were AI-generated
+- 🌍 **Multi-language Support** - Any ISO 639-1 language pair
+- 📚 **Study Mode** - Random flashcard selection with optional AI hints
+- 🔄 **Full CRUD** - Complete REST API for flashcard management 
 
 ## Prerequisites
 
@@ -58,27 +67,58 @@ The application will start on `http://localhost:10000` (or the port specified in
 
 ## API Endpoints
 
-Full API documentation is available in the [OpenAPI specification](./openapi.yaml).
+Full API documentation is available in the [OpenAPI specification](./openapi.yaml) (v2.0.0).
 
-The API includes the following endpoints:
+### Translation (New in v2.0)
+- `POST /flashcards/translate` - Generate AI translation with caching
 
 ### Flashcards
-- `POST /flashcards` - Create a new flashcard (with optional AI translation)
+- `POST /flashcards` - Create a new flashcard (both question and answer required)
 - `GET /flashcards` - Get all flashcards
 - `GET /flashcards/{id}` - Get a specific flashcard by ID
 - `PUT /flashcards/{id}` - Update a flashcard
 - `DELETE /flashcards/{id}` - Delete a flashcard
-- `GET /flashcards/random` - Get a random flashcard for study (with an optional AI hint)
+- `GET /flashcards/random` - Get a random flashcard with optional AI hint
 
 ### Health Check
 - `GET /health` - Application health status
 
+### API Workflow (v2.0)
+
+**Creating a Flashcard with AI Translation:**
+
+1. **Generate Translation:**
+   ```bash
+   POST /flashcards/translate
+   {
+     "content": "hello",
+     "from_lang": "en",
+     "to_lang": "el"
+   }
+   # Returns: {"translation": "γεια σας", "cached": false}
+   ```
+
+2. **Create Flashcard:**
+   ```bash
+   POST /flashcards
+   {
+     "question": "hello",
+     "answer": "γεια σας",
+     "question_lang": "en",
+     "answer_lang": "el",
+     "ai_translated_answer": true
+   }
+   ```
+
+See [Testing Guide](.ai/TESTING_GUIDE.md) for more examples.
+
 ### API Features
 
-- **AI Translation**: Automatically translate flashcards between English and Greek
-- **Validation**: Smart validation ensures language parameters are provided when needed
-- **Study Mode**: Random flashcard endpoint for practicing
-- **Full CRUD**: Complete create, read, update, delete operations
+- **Translation Caching**: Generated translations are cached for 1 hour
+- **AI Tracking**: Track which fields were AI-generated vs manually entered
+- **Multi-language**: Support for any ISO 639-1 language pair (en, el, fr, de, es, etc.)
+- **Validation**: Smart input validation with helpful error messages
+- **Study Mode**: Random flashcard selection for practice sessions
 
 
 ## Configuration

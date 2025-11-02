@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/akolybelnikov/flashcards/config"
 	"github.com/akolybelnikov/flashcards/db"
@@ -58,7 +63,16 @@ func main() {
 		log.Println("AI translation disabled (OPENAI_API_KEY not set)")
 	}
 
-	flashcardService := services.NewFlashcardService(flashcardRepo, llmClient)
+	// Initialize translation cache
+	translationCache := services.NewInMemoryTranslationCache(cfg.TranslationCacheTTL)
+	log.Printf("Translation cache initialized with TTL: %s", cfg.TranslationCacheTTL)
+
+	// Start cache cleanup goroutine
+	stopCleanup := make(chan struct{})
+	translationCache.StartCleanup(cfg.TranslationCacheCleanupInterval, stopCleanup)
+	log.Printf("Translation cache cleanup started (interval: %s)", cfg.TranslationCacheCleanupInterval)
+
+	flashcardService := services.NewFlashcardService(flashcardRepo, llmClient, translationCache)
 	if flashcardService == nil {
 		log.Fatal("Failed to initialize flashcard service")
 	}
@@ -79,9 +93,39 @@ func main() {
 	addr := ":" + cfg.Port
 	fmt.Printf("Server starting on port %s\n", cfg.Port)
 
-	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	// Create HTTP server
+	server := &http.Server{
+		Addr:    addr,
+		Handler: router,
 	}
+
+	// Start server in goroutine
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Stop cache cleanup
+	close(stopCleanup)
+	log.Println("Translation cache cleanup stopped")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
 }
 
 func recoverMiddleware(next http.Handler) http.Handler {

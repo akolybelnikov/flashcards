@@ -10,6 +10,7 @@ require (
 require (
 	github.com/joho/godotenv v1.5.1
 	github.com/tmc/langchaingo v0.1.14
+	go.uber.org/mock v0.6.0
 )
 
 require (

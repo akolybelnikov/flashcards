@@ -1,5 +1,7 @@
 package services
 
+//go:generate mockgen -destination=mocks/mock_llm_client.go -package=mocks github.com/akolybelnikov/flashcards/services LLMClient
+
 import (
 	"context"
 	"errors"
@@ -35,35 +37,29 @@ func NewOpenAIClient(apiKey string) (*OpenAIClient, error) {
 }
 
 // Translate translates text from source language to target language
+// Language codes should follow ISO 639-1 standard (e.g., "en", "el", "fr")
 func (c *OpenAIClient) Translate(ctx context.Context, text, sourceLang, targetLang string) (string, error) {
 	if c.llm == nil {
 		return "", errors.New("LLM client not initialized")
+	}
+
+	// Validate language codes
+	if err := validateLanguageCode(sourceLang); err != nil {
+		return "", fmt.Errorf("invalid source language: %w", err)
+	}
+	if err := validateLanguageCode(targetLang); err != nil {
+		return "", fmt.Errorf("invalid target language: %w", err)
 	}
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Map language codes to full names for better prompt clarity
-	langMap := map[string]string{
-		"en": "English",
-		"el": "Greek",
-	}
-
-	sourceLanguage := langMap[sourceLang]
-	if sourceLanguage == "" {
-		sourceLanguage = sourceLang
-	}
-
-	targetLanguage := langMap[targetLang]
-	if targetLanguage == "" {
-		targetLanguage = targetLang
-	}
-
+	// OpenAI understands ISO 639-1 language codes directly
 	prompt := fmt.Sprintf(
 		"Translate the following text from %s to %s. Provide ONLY the translation, no explanations or additional text.\n\nText: %s",
-		sourceLanguage,
-		targetLanguage,
+		sourceLang,
+		targetLang,
 		text,
 	)
 
@@ -73,4 +69,17 @@ func (c *OpenAIClient) Translate(ctx context.Context, text, sourceLang, targetLa
 	}
 
 	return response, nil
+}
+
+// validateLanguageCode checks if a language code follows ISO 639-1 format (2 lowercase letters)
+func validateLanguageCode(code string) error {
+	if len(code) != 2 {
+		return fmt.Errorf("language code must be 2 characters, got %d", len(code))
+	}
+	for _, r := range code {
+		if r < 'a' || r > 'z' {
+			return fmt.Errorf("language code must contain only lowercase letters")
+		}
+	}
+	return nil
 }

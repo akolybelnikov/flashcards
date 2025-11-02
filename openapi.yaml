@@ -4,18 +4,25 @@ info:
   description: |
     AI-engineered flashcard application for language learning with intelligent translation features.
     
-    This API allows you to create, manage, and study flashcards with optional AI-powered translations
-    between English and Greek. Perfect for language learners who want to build their vocabulary
-    with automated translation assistance.
+    This API provides a stateful workflow for creating flashcards with optional AI-powered translations.
+    Generate translations, review them, and then save your flashcards with full control over the content.
     
     **Key Features:**
-    - Create flashcards manually or with AI translation
-    - Automatically translate between English and Greek
-    - Random flashcard selection for studying
-    - Full CRUD operations on flashcards
+    - 🤖 **AI Translation Generation** - Generate translations on-demand (cached for 1 hour)
+    - 📝 **Manual Card Creation** - Full control over both sides of the card
+    - 🎯 **Translation Tracking** - Know which fields were AI-generated
+    - 🌍 **Multi-language Support** - Any ISO 639-1 language pair
+    - 📚 **Study Mode** - Random flashcard selection with optional AI hints
+    - 🔄 **Full CRUD** - Create, read, update, and delete flashcards
+    
+    **Workflow:**
+    1. User types content in one language
+    2. Call `/flashcards/translate` to generate translation (cached)
+    3. Review/edit the suggested translation
+    4. Call `/flashcards` to save the card with AI tracking flags
     
     **GitHub Repository:** [https://github.com/akolybelnikov/flashcards](https://github.com/akolybelnikov/flashcards)
-  version: 1.0.0
+  version: 2.0.0
   contact:
     name: API Support
     url: https://github.com/akolybelnikov/flashcards/issues
@@ -31,7 +38,9 @@ servers:
 
 tags:
   - name: Flashcards
-    description: Operations for managing flashcards
+    description: CRUD operations for managing flashcards
+  - name: Translation
+    description: AI-powered translation generation with caching
   - name: Health
     description: Health check endpoints
 
@@ -52,11 +61,9 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: ok
-                  timestamp:
-                    type: string
-                    format: date-time
-                    example: "2025-11-01T10:00:00Z"
+                    example: "healthy"
+              example:
+                status: "healthy"
 
   /flashcards:
     get:
@@ -83,17 +90,23 @@ paths:
     post:
       summary: Create a new flashcard
       description: |
-        Create a new flashcard with optional AI translation.
+        Create a new flashcard with both question and answer provided.
         
-        **Validation Rules:**
-        - If both `question` and `answer` are provided: Card is created directly (no translation)
-        - If either field is empty: Both `question_lang` and `answer_lang` are **required**
-        - Both fields cannot be empty
+        **⚠️ Breaking Change in v2.0:** Both question and answer are now **required**.
+        Use `/flashcards/translate` endpoint first to generate translations if needed.
         
-        **Examples:**
-        - Manual card: Provide both question and answer
-        - EN → EL translation: Provide question + both lang fields (answer will be translated)
-        - EL → EN translation: Provide answer + both lang fields (question will be translated)
+        **Workflow:**
+        1. Generate translation: `POST /flashcards/translate`
+        2. Review/edit the translation
+        3. Create flashcard: `POST /flashcards` (this endpoint)
+        
+        **AI Tracking:**
+        Set `ai_translated_question` or `ai_translated_answer` to `true` to track which
+        fields were AI-generated. This helps with analytics and future features.
+        
+        **Language Codes:**
+        Use ISO 639-1 codes (e.g., "en", "el", "fr"). Optional but recommended for
+        proper language tracking and future features.
       tags:
         - Flashcards
       requestBody:
@@ -104,54 +117,61 @@ paths:
               $ref: '#/components/schemas/CreateFlashcardRequest'
             examples:
               manual:
-                summary: Manual card creation (no translation)
+                summary: Manual card (no AI)
                 value:
                   question: "hello"
                   answer: "γεια σας"
-              translateToGreek:
-                summary: Translate English to Greek
-                value:
-                  question: "hello"
-                  answer: ""
                   question_lang: "en"
                   answer_lang: "el"
-              translateToEnglish:
-                summary: Translate Greek to English
+              withAITranslation:
+                summary: With AI-generated translation
                 value:
-                  question: ""
+                  question: "hello"
                   answer: "γεια σας"
                   question_lang: "en"
                   answer_lang: "el"
+                  ai_translated_answer: true
+              bothAI:
+                summary: Both fields AI-generated
+                value:
+                  question: "hello"
+                  answer: "γεια σας"
+                  question_lang: "en"
+                  answer_lang: "el"
+                  ai_translated_question: true
+                  ai_translated_answer: true
       responses:
         '201':
           description: Flashcard created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateFlashcardResponse'
+                $ref: '#/components/schemas/Flashcard'
               examples:
                 manual:
                   summary: Manual creation (no AI)
                   value:
-                    flashcard:
-                      id: 1
-                      question: "hello"
-                      answer: "γεια σας"
-                      created_at: "2025-11-01T10:00:00Z"
-                      updated_at: "2025-11-01T10:00:00Z"
-                    ai_translation_used: false
-                    translated_field: ""
-                withTranslation:
+                    id: 1
+                    question: "hello"
+                    answer: "γεια σας"
+                    question_lang: "en"
+                    answer_lang: "el"
+                    ai_translated_question: false
+                    ai_translated_answer: false
+                    created_at: "2025-11-02T10:00:00Z"
+                    updated_at: "2025-11-02T10:00:00Z"
+                withAI:
                   summary: With AI translation
                   value:
-                    flashcard:
-                      id: 2
-                      question: "hello"
-                      answer: "γεια σας"
-                      created_at: "2025-11-01T10:00:00Z"
-                      updated_at: "2025-11-01T10:00:00Z"
-                    ai_translation_used: true
-                    translated_field: "answer"
+                    id: 2
+                    question: "hello"
+                    answer: "γεια σας"
+                    question_lang: "en"
+                    answer_lang: "el"
+                    ai_translated_question: false
+                    ai_translated_answer: true
+                    created_at: "2025-11-02T10:00:00Z"
+                    updated_at: "2025-11-02T10:00:00Z"
         '400':
           description: Bad request (validation error)
           content:
@@ -160,13 +180,13 @@ paths:
                 $ref: '#/components/schemas/Error'
               examples:
                 bothEmpty:
-                  summary: Both fields empty
+                  summary: Missing required fields
                   value:
-                    error: "Both question and answer cannot be empty"
-                missingLanguages:
-                  summary: Missing language parameters
+                    error: "Both question and answer must be provided"
+                emptyQuestion:
+                  summary: Empty question
                   value:
-                    error: "Both question_lang and answer_lang are required when translation is needed"
+                    error: "Both question and answer must be provided"
                 invalidJson:
                   summary: Invalid JSON
                   value:
@@ -305,6 +325,115 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /flashcards/translate:
+    post:
+      summary: Generate AI translation
+      description: |
+        Generate an AI-powered translation for flashcard content.
+        
+        **Caching:**
+        - First request: Calls OpenAI API (slower, ~1-3 seconds)
+        - Subsequent requests: Returns cached result (fast, <10ms)
+        - Cache TTL: 1 hour (configurable)
+        - Cache key: Hash of (content + from_lang + to_lang)
+        
+        **Workflow:**
+        1. User types "hello" in English field
+        2. Click "Generate Translation" → Call this endpoint
+        3. Backend returns "γεια σας" with `cached: false`
+        4. User can accept, edit, or discard
+        5. Clicking "Generate" again returns same translation with `cached: true`
+        
+        **Language Codes:**
+        Use ISO 639-1 codes (2 lowercase letters). Examples:
+        - `en` = English
+        - `el` = Greek (Ελληνικά)
+        - `fr` = French
+        - `de` = German
+        - `es` = Spanish
+        
+        See [ISO 639-1 codes](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) for full list.
+        
+        **Note:** Requires `OPENAI_API_KEY` to be configured on the server.
+      tags:
+        - Translation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateTranslationRequest'
+            examples:
+              englishToGreek:
+                summary: English to Greek
+                value:
+                  content: "hello"
+                  from_lang: "en"
+                  to_lang: "el"
+              greekToEnglish:
+                summary: Greek to English
+                value:
+                  content: "γεια σας"
+                  from_lang: "el"
+                  to_lang: "en"
+              frenchToEnglish:
+                summary: French to English
+                value:
+                  content: "bonjour"
+                  from_lang: "fr"
+                  to_lang: "en"
+      responses:
+        '200':
+          description: Translation generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateTranslationResponse'
+              examples:
+                cacheMiss:
+                  summary: First request (cache miss)
+                  value:
+                    translation: "γεια σας"
+                    cached: false
+                    cache_key: "a1b2c3d4e5f6..."
+                cacheHit:
+                  summary: Subsequent request (cache hit)
+                  value:
+                    translation: "γεια σας"
+                    cached: true
+                    cache_key: "a1b2c3d4e5f6..."
+        '400':
+          description: Bad request (validation error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                emptyContent:
+                  summary: Missing content
+                  value:
+                    error: "Content cannot be empty"
+                missingLanguages:
+                  summary: Missing language codes
+                  value:
+                    error: "Both from_lang and to_lang must be provided"
+                invalidLanguageCode:
+                  summary: Invalid language format
+                  value:
+                    error: "invalid source language: language code must be 2 characters"
+                aiNotAvailable:
+                  summary: OpenAI not configured
+                  value:
+                    error: "AI translation not available: API key not configured"
+        '500':
+          description: Translation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "translation failed: API error"
+
   /flashcards/random:
     get:
       summary: Get a random flashcard
@@ -339,8 +468,12 @@ paths:
                       id: 5
                       question: "hello"
                       answer: "γεια σας"
-                      created_at: "2025-11-01T10:00:00Z"
-                      updated_at: "2025-11-01T10:00:00Z"
+                      question_lang: "en"
+                      answer_lang: "el"
+                      ai_translated_question: false
+                      ai_translated_answer: true
+                      created_at: "2025-11-02T10:00:00Z"
+                      updated_at: "2025-11-02T10:00:00Z"
                     ai_hint: "A common Greek greeting used in formal situations"
                 withoutHint:
                   summary: Without AI hint
@@ -349,8 +482,12 @@ paths:
                       id: 5
                       question: "hello"
                       answer: "γεια σας"
-                      created_at: "2025-11-01T10:00:00Z"
-                      updated_at: "2025-11-01T10:00:00Z"
+                      question_lang: "en"
+                      answer_lang: "el"
+                      ai_translated_question: false
+                      ai_translated_answer: false
+                      created_at: "2025-11-02T10:00:00Z"
+                      updated_at: "2025-11-02T10:00:00Z"
                     ai_hint: null
         '500':
           description: Internal server error
@@ -367,6 +504,8 @@ components:
         - id
         - question
         - answer
+        - ai_translated_question
+        - ai_translated_answer
         - created_at
         - updated_at
       properties:
@@ -382,61 +521,130 @@ components:
           type: string
           description: The answer/back side of the flashcard
           example: "γεια σας"
+        question_lang:
+          type: string
+          nullable: true
+          description: ISO 639-1 language code for the question (e.g., "en", "el")
+          pattern: '^[a-z]{2}$'
+          example: "en"
+        answer_lang:
+          type: string
+          nullable: true
+          description: ISO 639-1 language code for the answer (e.g., "en", "el")
+          pattern: '^[a-z]{2}$'
+          example: "el"
+        ai_translated_question:
+          type: boolean
+          description: Whether the question was AI-generated
+          example: false
+        ai_translated_answer:
+          type: boolean
+          description: Whether the answer was AI-generated
+          example: true
         created_at:
           type: string
           format: date-time
           description: Timestamp when the flashcard was created
-          example: "2025-11-01T10:00:00Z"
+          example: "2025-11-02T10:00:00Z"
         updated_at:
           type: string
           format: date-time
           description: Timestamp when the flashcard was last updated
-          example: "2025-11-01T10:00:00Z"
+          example: "2025-11-02T10:00:00Z"
 
     CreateFlashcardRequest:
       type: object
+      required:
+        - question
+        - answer
       properties:
         question:
           type: string
-          description: The question/front side of the flashcard (can be empty if using AI translation)
+          description: The question/front side of the flashcard (required)
+          minLength: 1
           example: "hello"
         answer:
           type: string
-          description: The answer/back side of the flashcard (can be empty if using AI translation)
+          description: The answer/back side of the flashcard (required)
+          minLength: 1
           example: "γεια σας"
         question_lang:
           type: string
-          description: Language code for the question (required if either field is empty)
-          enum: [en, el]
+          description: ISO 639-1 language code for the question (optional but recommended)
+          pattern: '^[a-z]{2}$'
           example: "en"
         answer_lang:
           type: string
-          description: Language code for the answer (required if either field is empty)
-          enum: [en, el]
+          description: ISO 639-1 language code for the answer (optional but recommended)
+          pattern: '^[a-z]{2}$'
           example: "el"
+        ai_translated_question:
+          type: boolean
+          description: Set to true if the question was AI-generated (defaults to false)
+          default: false
+          example: false
+        ai_translated_answer:
+          type: boolean
+          description: Set to true if the answer was AI-generated (defaults to false)
+          default: false
+          example: true
       example:
         question: "hello"
-        answer: ""
+        answer: "γεια σας"
         question_lang: "en"
         answer_lang: "el"
+        ai_translated_answer: true
 
-    CreateFlashcardResponse:
+    GenerateTranslationRequest:
       type: object
       required:
-        - flashcard
-        - ai_translation_used
+        - content
+        - from_lang
+        - to_lang
       properties:
-        flashcard:
-          $ref: '#/components/schemas/Flashcard'
-        ai_translation_used:
-          type: boolean
-          description: Whether AI translation was used to create this flashcard
-          example: true
-        translated_field:
+        content:
           type: string
-          description: Which field was translated ("question" or "answer"), empty if no translation
-          enum: ["", "question", "answer"]
-          example: "answer"
+          description: The text content to translate
+          minLength: 1
+          example: "hello"
+        from_lang:
+          type: string
+          description: Source language code (ISO 639-1, 2 lowercase letters)
+          pattern: '^[a-z]{2}$'
+          example: "en"
+        to_lang:
+          type: string
+          description: Target language code (ISO 639-1, 2 lowercase letters)
+          pattern: '^[a-z]{2}$'
+          example: "el"
+      example:
+        content: "hello"
+        from_lang: "en"
+        to_lang: "el"
+
+    GenerateTranslationResponse:
+      type: object
+      required:
+        - translation
+        - cached
+        - cache_key
+      properties:
+        translation:
+          type: string
+          description: The translated text
+          example: "γεια σας"
+        cached:
+          type: boolean
+          description: Whether this result was served from cache (true) or freshly generated (false)
+          example: false
+        cache_key:
+          type: string
+          description: Unique cache key for this translation (hash of content + languages)
+          example: "a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890"
+      example:
+        translation: "γεια σας"
+        cached: false
+        cache_key: "a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890"
 
     UpdateFlashcardRequest:
       type: object

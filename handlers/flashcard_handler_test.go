@@ -14,27 +14,44 @@ import (
 )
 
 // mockService implements the FlashcardServiceInterface for handler tests and returns deterministic values.
+// Note: This could be replaced with gomock generated mocks, but inline mocks are simpler for handler tests.
 type mockService struct{}
 
-func (m *mockService) CreateFlashcard(req *models.CreateFlashcardRequest) (*models.Flashcard, bool, string, error) {
+func (m *mockService) CreateFlashcard(req *models.CreateFlashcardRequest) (*models.Flashcard, error) {
 	now := time.Now()
-	fc := &models.Flashcard{ID: 1, Question: req.Question, Answer: req.Answer, CreatedAt: now, UpdatedAt: now}
 
-	// Simulate translation if one field is empty
-	aiUsed := false
-	translatedField := ""
-
-	if req.Question != "" && req.Answer == "" {
-		fc.Answer = "translated answer"
-		aiUsed = true
-		translatedField = "answer"
-	} else if req.Answer != "" && req.Question == "" {
-		fc.Question = "translated question"
-		aiUsed = true
-		translatedField = "question"
+	// Set defaults for pointers
+	var questionLang, answerLang *string
+	if req.QuestionLang != nil {
+		questionLang = req.QuestionLang
+	}
+	if req.AnswerLang != nil {
+		answerLang = req.AnswerLang
 	}
 
-	return fc, aiUsed, translatedField, nil
+	aiTranslatedQuestion := false
+	if req.AITranslatedQuestion != nil {
+		aiTranslatedQuestion = *req.AITranslatedQuestion
+	}
+
+	aiTranslatedAnswer := false
+	if req.AITranslatedAnswer != nil {
+		aiTranslatedAnswer = *req.AITranslatedAnswer
+	}
+
+	fc := &models.Flashcard{
+		ID:                   1,
+		Question:             req.Question,
+		Answer:               req.Answer,
+		QuestionLang:         questionLang,
+		AnswerLang:           answerLang,
+		AITranslatedQuestion: aiTranslatedQuestion,
+		AITranslatedAnswer:   aiTranslatedAnswer,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+
+	return fc, nil
 }
 
 func (m *mockService) GetAllFlashcards() ([]*models.Flashcard, error) {
@@ -83,6 +100,20 @@ func (m *mockService) GenerateAIHint(_ *models.Flashcard, _ string) *string {
 	return &h
 }
 
+func (m *mockService) GenerateTranslation(req *models.GenerateTranslationRequest) (*models.GenerateTranslationResponse, error) {
+	// Simple mock translation
+	translation := "translated: " + req.Content
+	if req.FromLang == "en" && req.ToLang == "el" && req.Content == "hello" {
+		translation = "γεια σας"
+	}
+
+	return &models.GenerateTranslationResponse{
+		Translation: translation,
+		Cached:      false,
+		CacheKey:    "mock-key-123",
+	}, nil
+}
+
 func TestCreateFlashcardHandler(t *testing.T) {
 	// use a mock service that provides deterministic results
 	svc := &mockService{}
@@ -92,7 +123,7 @@ func TestCreateFlashcardHandler(t *testing.T) {
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
 
-	payload := map[string]string{"question": "hello", "answer": "γεια σασ"}
+	payload := map[string]string{"question": "hello", "answer": "γεια σας"}
 	b, _ := json.Marshal(payload)
 
 	req := httptest.NewRequest("POST", "/flashcards", bytes.NewReader(b))
@@ -105,18 +136,15 @@ func TestCreateFlashcardHandler(t *testing.T) {
 		t.Fatalf("expected status 201, got %d", rr.Code)
 	}
 
-	var resp models.CreateFlashcardResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+	var flashcard models.Flashcard
+	if err := json.NewDecoder(rr.Body).Decode(&flashcard); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Flashcard == nil {
-		t.Fatalf("expected flashcard in response")
+	if flashcard.Question != "hello" {
+		t.Fatalf("expected question 'hello', got '%s'", flashcard.Question)
 	}
-	if resp.Flashcard.Question != "hello" {
-		t.Fatalf("expected question 'hello', got '%s'", resp.Flashcard.Question)
-	}
-	if resp.Flashcard.Answer != "γεια σασ" {
-		t.Fatalf("expected answer 'γεια σασ', got '%s'", resp.Flashcard.Answer)
+	if flashcard.Answer != "γεια σας" {
+		t.Fatalf("expected answer 'γεια σας', got '%s'", flashcard.Answer)
 	}
 }
 
@@ -144,98 +172,8 @@ func TestCreateFlashcardBothFieldsEmpty(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if errResp["error"] != "Both question and answer cannot be empty" {
+	if errResp["error"] != "Both question and answer must be provided" {
 		t.Fatalf("unexpected error message: %s", errResp["error"])
-	}
-}
-
-func TestCreateFlashcardQuestionEmptyNoLang(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
-
-	r := mux.NewRouter()
-	h.RegisterRoutes(r)
-
-	payload := map[string]string{"question": "", "answer": "γεια σασ"}
-	b, _ := json.Marshal(payload)
-
-	req := httptest.NewRequest("POST", "/flashcards", bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	r.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", rr.Code)
-	}
-
-	var errResp map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if errResp["error"] != "Both question_lang and answer_lang are required when translation is needed" {
-		t.Fatalf("unexpected error message: %s", errResp["error"])
-	}
-}
-
-func TestCreateFlashcardAnswerEmptyNoLang(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
-
-	r := mux.NewRouter()
-	h.RegisterRoutes(r)
-
-	payload := map[string]string{"question": "hello", "answer": ""}
-	b, _ := json.Marshal(payload)
-
-	req := httptest.NewRequest("POST", "/flashcards", bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	r.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", rr.Code)
-	}
-
-	var errResp map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if errResp["error"] != "Both question_lang and answer_lang are required when translation is needed" {
-		t.Fatalf("unexpected error message: %s", errResp["error"])
-	}
-}
-
-func TestCreateFlashcardWithTranslation(t *testing.T) {
-	svc := &mockService{}
-	h := NewFlashcardHandler(svc)
-
-	r := mux.NewRouter()
-	h.RegisterRoutes(r)
-
-	payload := map[string]string{"question": "hello", "answer": "", "question_lang": "en", "answer_lang": "el"}
-	b, _ := json.Marshal(payload)
-
-	req := httptest.NewRequest("POST", "/flashcards", bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	r.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d", rr.Code)
-	}
-
-	var resp models.CreateFlashcardResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if !resp.AITranslationUsed {
-		t.Fatalf("expected ai_translation_used to be true")
-	}
-	if resp.TranslatedField != "answer" {
-		t.Fatalf("expected translated_field to be 'answer', got '%s'", resp.TranslatedField)
 	}
 }
 
@@ -337,5 +275,74 @@ func TestGetRandomFlashcardHandler(t *testing.T) {
 	}
 	if resp.AIHint == nil || *resp.AIHint != "hint" {
 		t.Fatalf("expected ai_hint 'hint', got %v", resp.AIHint)
+	}
+}
+
+func TestGenerateTranslationHandler(t *testing.T) {
+	svc := &mockService{}
+	h := NewFlashcardHandler(svc)
+
+	r := mux.NewRouter()
+	h.RegisterRoutes(r)
+
+	payload := map[string]string{
+		"content":   "hello",
+		"from_lang": "en",
+		"to_lang":   "el",
+	}
+	b, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest("POST", "/flashcards/translate", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rr.Code)
+	}
+
+	var resp models.GenerateTranslationResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Translation != "γεια σας" {
+		t.Fatalf("expected translation 'γεια σας', got '%s'", resp.Translation)
+	}
+	if resp.CacheKey == "" {
+		t.Fatalf("expected cache_key to be set")
+	}
+}
+
+func TestGenerateTranslationHandlerEmptyContent(t *testing.T) {
+	svc := &mockService{}
+	h := NewFlashcardHandler(svc)
+
+	r := mux.NewRouter()
+	h.RegisterRoutes(r)
+
+	payload := map[string]string{
+		"content":   "",
+		"from_lang": "en",
+		"to_lang":   "el",
+	}
+	b, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest("POST", "/flashcards/translate", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", rr.Code)
+	}
+
+	var errResp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if errResp["error"] != "Content cannot be empty" {
+		t.Fatalf("unexpected error message: %s", errResp["error"])
 	}
 }

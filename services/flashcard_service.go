@@ -1,5 +1,7 @@
 package services
 
+//go:generate mockgen -destination=mocks/mock_flashcard_service.go -package=mocks github.com/akolybelnikov/flashcards/services FlashcardServiceInterface
+
 import (
 	"context"
 	"errors"
@@ -12,67 +14,41 @@ import (
 // FlashcardServiceInterface defines the methods the handlers depend on. This allows tests to
 // provide a mock service implementation without depending on the concrete type.
 type FlashcardServiceInterface interface {
-	CreateFlashcard(req *models.CreateFlashcardRequest) (*models.Flashcard, bool, string, error)
+	CreateFlashcard(req *models.CreateFlashcardRequest) (*models.Flashcard, error)
 	GetAllFlashcards() ([]*models.Flashcard, error)
 	GetFlashcardByID(id int) (*models.Flashcard, error)
 	UpdateFlashcard(id int, req *models.UpdateFlashcardRequest) (*models.Flashcard, error)
 	DeleteFlashcard(id int) error
 	GetRandomFlashcard() (*models.Flashcard, error)
 	GenerateAIHint(flashcard *models.Flashcard, lang string) *string
+	GenerateTranslation(req *models.GenerateTranslationRequest) (*models.GenerateTranslationResponse, error)
 }
 
 type FlashcardService struct {
-	repo      db.FlashcardRepository
-	llmClient LLMClient
+	repo             db.FlashcardRepository
+	llmClient        LLMClient
+	translationCache TranslationCache
 }
 
-func NewFlashcardService(repo db.FlashcardRepository, llmClient LLMClient) *FlashcardService {
+func NewFlashcardService(repo db.FlashcardRepository, llmClient LLMClient, translationCache TranslationCache) *FlashcardService {
 	if repo == nil {
 		panic("repository cannot be nil")
 	}
 	return &FlashcardService{
-		repo:      repo,
-		llmClient: llmClient,
+		repo:             repo,
+		llmClient:        llmClient,
+		translationCache: translationCache,
 	}
 }
 
-func (s *FlashcardService) CreateFlashcard(req *models.CreateFlashcardRequest) (*models.Flashcard, bool, string, error) {
-	// Case 1: Both question and answer provided - no translation needed
-	if req.Question != "" && req.Answer != "" {
-		fc, err := s.repo.Create(req)
-		return fc, false, "", err
+func (s *FlashcardService) CreateFlashcard(req *models.CreateFlashcardRequest) (*models.Flashcard, error) {
+	// Validate that both question and answer are provided
+	if req.Question == "" || req.Answer == "" {
+		return nil, errors.New("both question and answer must be provided")
 	}
 
-	if s.llmClient == nil {
-		return nil, false, "", errors.New("AI translation not available: API key not configured")
-	}
-
-	translatedField := ""
-
-	// Case 2: Only question provided - translate to answer
-	if req.Question != "" && req.Answer == "" {
-		translation, err := s.llmClient.Translate(context.Background(), req.Question, req.QuestionLang, req.AnswerLang)
-		if err != nil {
-			return nil, false, "", errors.New("failed to translate question to answer: " + err.Error())
-		}
-
-		req.Answer = translation
-		translatedField = "answer"
-	}
-
-	// Case 3: Only answer provided - translate to question
-	if req.Answer != "" && req.Question == "" {
-		translation, err := s.llmClient.Translate(context.Background(), req.Answer, req.AnswerLang, req.QuestionLang)
-		if err != nil {
-			return nil, false, "", errors.New("failed to translate answer to question: " + err.Error())
-		}
-
-		req.Question = translation
-		translatedField = "question"
-	}
-
-	flashcard, err := s.repo.Create(req)
-	return flashcard, true, translatedField, err
+	// Create the flashcard with AI flags if provided (default to false)
+	return s.repo.Create(req)
 }
 
 func (s *FlashcardService) GetAllFlashcards() ([]*models.Flashcard, error) {
@@ -130,4 +106,57 @@ func (s *FlashcardService) GenerateAIHint(flashcard *models.Flashcard, lang stri
 func (s *FlashcardService) getTranslation(term, sourceLang, targetLang string) (string, error) {
 	ctx := context.Background()
 	return s.llmClient.Translate(ctx, term, sourceLang, targetLang)
+}
+
+// GenerateTranslation generates a translation using AI, with caching to prevent redundant API calls
+func (s *FlashcardService) GenerateTranslation(req *models.GenerateTranslationRequest) (*models.GenerateTranslationResponse, error) {
+	// Validate input
+	if req.Content == "" {
+		return nil, errors.New("content cannot be empty")
+	}
+	if req.FromLang == "" || req.ToLang == "" {
+		return nil, errors.New("both from_lang and to_lang must be provided")
+	}
+
+	// Check if LLM client is available
+	if s.llmClient == nil {
+		return nil, errors.New("AI translation not available: API key not configured")
+	}
+
+	// Generate cache key
+	cacheKey := ""
+	if s.translationCache != nil {
+		cacheKey = s.translationCache.GenerateKey(req.Content, req.FromLang, req.ToLang)
+
+		// Check cache first
+		if cached, found := s.translationCache.Get(cacheKey); found {
+			return &models.GenerateTranslationResponse{
+				Translation: cached.Translation,
+				Cached:      true,
+				CacheKey:    cacheKey,
+			}, nil
+		}
+	}
+
+	// Cache miss - call LLM
+	ctx := context.Background()
+	translation, err := s.llmClient.Translate(ctx, req.Content, req.FromLang, req.ToLang)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache
+	if s.translationCache != nil {
+		s.translationCache.Set(cacheKey, &CachedTranslation{
+			Translation: translation,
+			FromLang:    req.FromLang,
+			ToLang:      req.ToLang,
+		})
+	}
+
+	return &models.GenerateTranslationResponse{
+		Translation: translation,
+		Cached:      false,
+		CacheKey:    cacheKey,
+	}, nil
 }
