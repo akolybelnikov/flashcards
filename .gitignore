@@ -20,3 +20,7 @@ coverage.html
 # IDE files
 .vscode/
 .idea/
+
+# AI generated files
+.ai/
+

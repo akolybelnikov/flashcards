@@ -40,10 +40,24 @@ func (h *FlashcardHandler) CreateFlashcard(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate: both question and answer must be provided
-	if strings.TrimSpace(req.Question) == "" || strings.TrimSpace(req.Answer) == "" {
-		h.writeErrorResponse(w, http.StatusBadRequest, "Both question and answer must be provided")
+	// Trim fields
+	req.Question = strings.TrimSpace(req.Question)
+	req.Answer = strings.TrimSpace(req.Answer)
+	req.FromLang = strings.TrimSpace(req.FromLang)
+	req.ToLang = strings.TrimSpace(req.ToLang)
+
+	// Validate: at least one of question or answer must be provided
+	if req.Question == "" && req.Answer == "" {
+		h.writeErrorResponse(w, http.StatusBadRequest, "At least one of question or answer must be provided")
 		return
+	}
+
+	// If translation is needed (one field is empty), require language fields
+	if req.Question == "" || req.Answer == "" {
+		if req.FromLang == "" || req.ToLang == "" {
+			h.writeErrorResponse(w, http.StatusBadRequest, "from_lang and to_lang are required when translation is needed")
+			return
+		}
 	}
 
 	flashcard, err := h.service.CreateFlashcard(&req)

@@ -15,12 +15,10 @@ type Flashcard struct {
 }
 
 type CreateFlashcardRequest struct {
-	Question             string  `json:"question"`
-	Answer               string  `json:"answer"`
-	QuestionLang         *string `json:"question_lang,omitempty"`
-	AnswerLang           *string `json:"answer_lang,omitempty"`
-	AITranslatedQuestion *bool   `json:"ai_translated_question,omitempty"`
-	AITranslatedAnswer   *bool   `json:"ai_translated_answer,omitempty"`
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+	FromLang string `json:"from_lang"` // Language of the provided content (en, el, etc.)
+	ToLang   string `json:"to_lang"`   // Language to translate to (en, el, etc.)
 }
 
 type UpdateFlashcardRequest struct {

@@ -37,7 +37,7 @@ func NewOpenAIClient(apiKey string) (*OpenAIClient, error) {
 }
 
 // Translate translates text from source language to target language
-// Language codes should follow ISO 639-1 standard (e.g., "en", "el", "fr")
+// codes should follow ISO 639-1 standard (e.g., "en", "el", "fr")
 func (c *OpenAIClient) Translate(ctx context.Context, text, sourceLang, targetLang string) (string, error) {
 	if c.llm == nil {
 		return "", errors.New("LLM client not initialized")

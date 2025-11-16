@@ -43,7 +43,7 @@ help:
 	@echo "  db-list     - List all migrations"
 
 build:
-	-@mkdir -p $(BIN_DIR) 2>/dev/null || mkdir $(BIN_DIR) 2>nul || true
+	-@mkdir -p $(BIN_DIR)
 	go build -o $(BUILD_OUT) cmd/main.go
 	@echo "Built $(BUILD_OUT)"
 
@@ -137,6 +137,6 @@ generate:
 	@echo "✓ Mocks generated successfully"
 
 clean-mocks:
-	@echo "Cleaning generated mocks..."	@rm -rf services/mocks db/mocks 2>/dev/null || true
+	@echo "Cleaning generated mocks..."	@rm -rf services/mocks db/mocks
 	@echo "✓ Mocks cleaned"
 

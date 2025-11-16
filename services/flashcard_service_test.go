@@ -25,19 +25,21 @@ func TestCreateFlashcardValidation(t *testing.T) {
 	mockRepo.EXPECT().
 		Create(gomock.Any()).
 		Return(&models.Flashcard{
-			ID:       1,
-			Question: "hello",
-			Answer:   "γεια σας",
+			ID:           1,
+			Question:     "hello",
+			Answer:       "γεια σας",
+			QuestionLang: &questionLang,
+			AnswerLang:   &answerLang,
 		}, nil)
 
 	svc := services.NewFlashcardService(mockRepo, mockLLM, mockCache)
 
 	// Both fields present - no translation needed
 	fc, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
-		Question:     "hello",
-		Answer:       "γεια σας",
-		QuestionLang: &questionLang,
-		AnswerLang:   &answerLang,
+		Question: "hello",
+		Answer:   "γεια σας",
+		FromLang: "en",
+		ToLang:   "el",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -52,36 +54,45 @@ func TestCreateFlashcardBothFieldsRequired(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockRepo := dbmocks.NewMockFlashcardRepository(ctrl)
-	mockLLM := mocks.NewMockLLMClient(ctrl)
-	mockCache := mocks.NewMockTranslationCache(ctrl)
 
-	svc := services.NewFlashcardService(mockRepo, mockLLM, mockCache)
-
-	// Empty question should fail
-	_, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
-		Question: "",
-		Answer:   "γεια σας",
-	})
-	if err == nil {
-		t.Fatalf("expected error when question is empty")
-	}
-
-	// Empty answer should fail
-	_, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
-		Question: "hello",
-		Answer:   "",
-	})
-	if err == nil {
-		t.Fatalf("expected error when answer is empty")
-	}
+	// Service without LLM client
+	svc := services.NewFlashcardService(mockRepo, nil, nil)
 
 	// Both empty should fail
-	_, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
+	_, err := svc.CreateFlashcard(&models.CreateFlashcardRequest{
 		Question: "",
 		Answer:   "",
 	})
 	if err == nil {
 		t.Fatalf("expected error when both fields are empty")
+	}
+
+	// Empty question with no LLM should fail
+	_, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question: "",
+		Answer:   "γεια σας",
+		FromLang: "el",
+		ToLang:   "en",
+	})
+	if err == nil {
+		t.Fatalf("expected error when LLM is nil and translation is needed")
+	}
+	if err.Error() != "AI translation not available: API key not configured" {
+		t.Fatalf("expected AI translation error, got: %v", err)
+	}
+
+	// Empty answer with no LLM should fail
+	_, err = svc.CreateFlashcard(&models.CreateFlashcardRequest{
+		Question: "hello",
+		Answer:   "",
+		FromLang: "en",
+		ToLang:   "el",
+	})
+	if err == nil {
+		t.Fatalf("expected error when LLM is nil and translation is needed")
+	}
+	if err.Error() != "AI translation not available: API key not configured" {
+		t.Fatalf("expected AI translation error, got: %v", err)
 	}
 }
 

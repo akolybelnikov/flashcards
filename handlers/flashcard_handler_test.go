@@ -28,12 +28,14 @@ func TestCreateFlashcardHandler(t *testing.T) {
 		CreateFlashcard(gomock.Any()).
 		DoAndReturn(func(req *models.CreateFlashcardRequest) (*models.Flashcard, error) {
 			now := time.Now()
+			questionLang := "en"
+			answerLang := "el"
 			return &models.Flashcard{
 				ID:                   1,
 				Question:             req.Question,
 				Answer:               req.Answer,
-				QuestionLang:         req.QuestionLang,
-				AnswerLang:           req.AnswerLang,
+				QuestionLang:         &questionLang,
+				AnswerLang:           &answerLang,
 				AITranslatedQuestion: false,
 				AITranslatedAnswer:   false,
 				CreatedAt:            now,
@@ -45,7 +47,12 @@ func TestCreateFlashcardHandler(t *testing.T) {
 	r := mux.NewRouter()
 	h.RegisterRoutes(r)
 
-	payload := map[string]string{"question": "hello", "answer": "γεια σας"}
+	payload := map[string]string{
+		"question":  "hello",
+		"answer":    "γεια σας",
+		"from_lang": "en",
+		"to_lang":   "el",
+	}
 	b, _ := json.Marshal(payload)
 
 	req := httptest.NewRequest("POST", "/flashcards", bytes.NewReader(b))
@@ -97,7 +104,7 @@ func TestCreateFlashcardBothFieldsEmpty(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if errResp["error"] != "Both question and answer must be provided" {
+	if errResp["error"] != "At least one of question or answer must be provided" {
 		t.Fatalf("unexpected error message: %s", errResp["error"])
 	}
 }

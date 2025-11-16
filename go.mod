@@ -9,8 +9,10 @@ require (
 
 require (
 	github.com/joho/godotenv v1.5.1
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/tmc/langchaingo v0.1.14
 	go.uber.org/mock v0.6.0
+	golang.org/x/sync v0.18.0
 )
 
 require (

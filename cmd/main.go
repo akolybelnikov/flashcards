@@ -63,11 +63,11 @@ func main() {
 		log.Println("AI translation disabled (OPENAI_API_KEY not set)")
 	}
 
-	// Initialize translation cache
-	translationCache := services.NewInMemoryTranslationCache(cfg.TranslationCacheTTL)
-	log.Printf("Translation cache initialized with TTL: %s", cfg.TranslationCacheTTL)
+	// Initialize translation cache using go-cache with TTL and cleanup interval from config
+	translationCache := services.NewGoCacheTranslationCache(cfg.TranslationCacheTTL, cfg.TranslationCacheCleanupInterval)
+	log.Printf("Translation cache initialized with TTL: %s, cleanup interval: %s", cfg.TranslationCacheTTL, cfg.TranslationCacheCleanupInterval)
 
-	// Start cache cleanup goroutine
+	// Start a cache cleanup goroutine (kept for compatibility; StartCleanup will noop if interval <= 0)
 	stopCleanup := make(chan struct{})
 	translationCache.StartCleanup(cfg.TranslationCacheCleanupInterval, stopCleanup)
 	log.Printf("Translation cache cleanup started (interval: %s)", cfg.TranslationCacheCleanupInterval)

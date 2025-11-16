@@ -32,18 +32,20 @@ func (r *PostgresFlashcardRepository) Create(req *models.CreateFlashcardRequest)
 		VALUES ($1, $2, $3, $4, $5, $6) 
 		RETURNING id, question, answer, question_lang, answer_lang, ai_translated_question, ai_translated_answer, created_at, updated_at`
 
-	// Set defaults for AI flags if not provided
-	aiTranslatedQuestion := false
-	if req.AITranslatedQuestion != nil {
-		aiTranslatedQuestion = *req.AITranslatedQuestion
-	}
-	aiTranslatedAnswer := false
-	if req.AITranslatedAnswer != nil {
-		aiTranslatedAnswer = *req.AITranslatedAnswer
+	// Determine language fields based on from_lang and to_lang
+	// If from_lang and to_lang are provided, use them; otherwise set to nil
+	var questionLang, answerLang *string
+	if req.FromLang != "" && req.ToLang != "" {
+		questionLang = &req.FromLang
+		answerLang = &req.ToLang
 	}
 
+	// AI flags default to false (will be set by service if translation occurred)
+	aiTranslatedQuestion := false
+	aiTranslatedAnswer := false
+
 	var flashcard models.Flashcard
-	err := r.db.QueryRow(query, req.Question, req.Answer, req.QuestionLang, req.AnswerLang, aiTranslatedQuestion, aiTranslatedAnswer).Scan(
+	err := r.db.QueryRow(query, req.Question, req.Answer, questionLang, answerLang, aiTranslatedQuestion, aiTranslatedAnswer).Scan(
 		&flashcard.ID,
 		&flashcard.Question,
 		&flashcard.Answer,
